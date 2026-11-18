@@ -1,0 +1,25 @@
+[package]
+name = "engine-spike"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Throwaway prototype: one WebView2 window + native adblock, to measure RAM
+# and blocking overhead before any real UI work.
+
+[dependencies]
+adblock = "0.13"
+webview2-com = "0.39"
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_Com",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_HiDpi",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

@@ -1,0 +1,3 @@
+// App icon (taskbar, Alt+Tab, Explorer). Built from assets/logo/veyra.svg,
+// see tools/logo-assets.py.
+1 ICON "logo/veyra.ico"

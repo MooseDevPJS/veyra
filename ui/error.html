@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<title>Pagina non raggiungibile</title>
+<style>
+  :root {
+    --bg: #F4F4F6; --fg: #1C1C1E; --fg2: rgba(28,28,30,.74); --fg3: rgba(28,28,30,.6); --tint: rgba(0,0,0,.06); --tint2: rgba(0,0,0,.1);
+    --ease: cubic-bezier(.2,.8,.2,1);
+    font: 15px/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161618; --fg: #F2F2F4; --fg2: rgba(242,242,244,.72); --fg3: rgba(242,242,244,.56); --tint: rgba(255,255,255,.07); --tint2: rgba(255,255,255,.12); }
+  }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); }
+  body { display: grid; place-items: center; }
+  main { width: min(520px, 86vw); margin-top: -6vh; animation: rise .3s var(--ease) both; }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+  svg { width: 40px; height: 40px; stroke: var(--fg3); margin-bottom: 18px; }
+  h1 { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 8px; }
+  p { color: var(--fg2); margin: 0 0 6px; }
+  .addr { color: var(--fg3); font-size: 13px; word-break: break-all; margin-bottom: 24px; }
+  button { font: inherit; color: var(--fg); background: var(--tint); border: 0; border-radius: 10px; height: 36px; padding: 0 18px; cursor: pointer;
+           transition: background .12s var(--ease); }
+  button:hover { background: var(--tint2); }
+  @media (prefers-reduced-motion: reduce) { main { animation-duration: .01s; } }
+</style>
+</head>
+<body>
+<main>
+  <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5"/><path d="M12 16.5h.01"/>
+  </svg>
+  <h1 id="title"></h1>
+  <p id="why"></p>
+  <p class="addr" id="addr"></p>
+  <button type="button" id="retry"></button>
+</main>
+<script>
+const q = new URLSearchParams(location.search);
+const url = q.get('u') || '';
+const kind = q.get('e') || 'generic';
+// The browser's language (from Settings), else Windows'.
+const en = (q.get('l') || navigator.language).toLowerCase().slice(0, 2) !== 'it';
+const T = {
+  title: ['Impossibile aprire la pagina', "Can't open this page"],
+  retry: ['Riprova', 'Try again'],
+  offline: ['Sembra che tu non sia connesso a internet.', "You don't seem to be connected to the internet."],
+  dns: ['Questo indirizzo non esiste o il sito non risponde.', "This address doesn't exist or the site isn't answering."],
+  timeout: ['Il sito ci sta mettendo troppo a rispondere.', 'The site is taking too long to answer.'],
+  refused: ['Il sito ha rifiutato la connessione.', 'The site refused the connection.'],
+  cert: ['La connessione non è sicura: il certificato del sito non è valido.', "The connection isn't secure: the site's certificate isn't valid."],
+  generic: ['Qualcosa è andato storto durante il caricamento.', 'Something went wrong while loading.'],
+};
+const tr = (k) => T[k][en ? 1 : 0];
+document.documentElement.lang = en ? 'en' : 'it';
+document.title = tr('title');
+document.getElementById('title').textContent = tr('title');
+document.getElementById('why').textContent = tr(T[kind] ? kind : 'generic');
+document.getElementById('addr').textContent = url;
+const retry = document.getElementById('retry');
+retry.textContent = tr('retry');
+retry.addEventListener('click', () => { if (/^https?:/i.test(url)) location.replace(url); });
+</script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+/* New tab background picker (like Brave's): three cards, then swatches.
+   Shared by settings.html and newtab.html; uses their --fg/--tint/... colors. */
+.bg-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.bg-card { font: inherit; color: var(--fg2); background: none; border: 0; padding: 0; cursor: pointer; text-align: left;
+           display: flex; flex-direction: column; gap: 8px; border-radius: 12px; }
+.bg-thumb { position: relative; overflow: hidden; display: grid; place-items: center; aspect-ratio: 16 / 10; border-radius: 12px; background: var(--tint);
+            box-shadow: inset 0 0 0 1px var(--line); transition: box-shadow .16s var(--ease), transform .16s var(--ease); }
+.bg-card:hover .bg-thumb { transform: translateY(-1px); }
+.bg-card[aria-pressed="true"] .bg-thumb { box-shadow: inset 0 0 0 1px var(--line), 0 0 0 2px var(--ring-gap), 0 0 0 4px var(--fg); }
+.bg-card[aria-pressed="true"] .bg-name { color: var(--fg); }
+.bg-thumb video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.bg-name { font-size: 13px; padding-left: 2px; }
+.bg-add { width: 20px; height: 20px; stroke: var(--fg3); }
+.bg-swatches { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.bg-swatches:empty { display: none; }
+.bg-swatch { width: 30px; height: 30px; border-radius: 50%; border: 0; padding: 0; cursor: pointer;
+             box-shadow: inset 0 0 0 1px rgba(127,127,127,.25); transition: box-shadow .16s var(--ease); }
+.bg-swatch[aria-pressed="true"] { box-shadow: inset 0 0 0 1px rgba(127,127,127,.25), 0 0 0 2px var(--ring-gap), 0 0 0 4px var(--fg); }
+.bg-image-actions { display: flex; align-items: center; gap: 12px; margin-top: 14px; }
+.bg-image-actions[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .bg-thumb, .bg-swatch { transition: none; } }

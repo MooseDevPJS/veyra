@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<title>Impostazioni</title>
+<link rel="stylesheet" href="backgrounds.css">
+<style>
+  :root {
+    --bg: #F4F4F6; --surface: #FFFFFF; --fg: #1C1C1E; --fg2: rgba(28,28,30,.74); --fg3: rgba(28,28,30,.64);
+    --line: rgba(0,0,0,.07); --tint: rgba(0,0,0,.05); --tint2: rgba(0,0,0,.09);
+    --menu: rgba(251,251,252,.86); --shadow: 0 12px 40px rgba(0,0,0,.16), 0 2px 8px rgba(0,0,0,.08);
+    --on: #1C1C1E; --knob-on: #FFFFFF;
+    --ease: cubic-bezier(.2,.8,.2,1);
+    font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #161618; --surface: #1F1F22; --fg: #F2F2F4; --fg2: rgba(242,242,244,.72); --fg3: rgba(242,242,244,.56);
+    --line: rgba(255,255,255,.06); --tint: rgba(255,255,255,.06); --tint2: rgba(255,255,255,.11);
+    --menu: rgba(36,36,40,.86); --shadow: 0 12px 40px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.3);
+    --on: #F2F2F4; --knob-on: #161618;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { background: var(--bg); color: var(--fg); }
+  body { margin: 0; padding: 64px 28px 120px; }
+  main { max-width: 620px; margin: 0 auto; }
+  h1 { font-size: 30px; font-weight: 600; letter-spacing: -0.025em; margin: 0 0 36px 4px; }
+  h2 { font-size: 13px; font-weight: 600; color: var(--fg3); margin: 40px 0 10px 16px; letter-spacing: .01em; }
+  section { background: var(--surface); border-radius: 16px; }
+  .row { display: flex; align-items: center; gap: 16px; min-height: 54px; padding: 10px 12px 10px 16px; position: relative; }
+  .row + .row::before { content: ""; position: absolute; top: 0; left: 16px; right: 16px; border-top: 1px solid var(--line); }
+  .row > label { flex: 1; display: flex; align-items: center; gap: 8px; }
+  /* "?" hover help */
+  .help { position: relative; width: 18px; height: 18px; border-radius: 50%; display: inline-grid; place-items: center;
+          font-size: 11px; font-weight: 600; color: var(--fg3); background: var(--tint); cursor: help; flex: none; }
+  .help span { position: absolute; left: 26px; top: 50%; width: 260px; padding: 10px 12px; border-radius: 12px;
+               background: var(--menu); backdrop-filter: blur(24px) saturate(1.4); color: var(--fg); box-shadow: var(--shadow);
+               font-weight: 400; font-size: 12.5px; line-height: 1.45; z-index: 5; pointer-events: none;
+               opacity: 0; transform: translate(-4px, -50%); transition: opacity .14s var(--ease), transform .14s var(--ease); }
+  .help:hover span, .help:focus span { opacity: 1; transform: translate(0, -50%); }
+  /* Dropdown */
+  .dd { position: relative; }
+  .dd > button { font: inherit; color: var(--fg); background: var(--tint); border: 0; border-radius: 10px; height: 34px;
+                 padding: 0 12px 0 14px; display: flex; align-items: center; gap: 10px; cursor: pointer;
+                 transition: background .12s var(--ease); }
+  .dd > button:hover, .dd.open > button { background: var(--tint2); }
+  .dd > button svg { width: 12px; height: 12px; stroke: var(--fg2); transition: transform .16s var(--ease); }
+  .dd.open > button svg { transform: rotate(180deg); }
+  .menu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 100%; padding: 6px; border-radius: 14px; z-index: 10;
+          background: var(--menu); backdrop-filter: blur(24px) saturate(1.4); box-shadow: var(--shadow);
+          border: 1px solid var(--line); opacity: 0; transform: translateY(-4px) scale(.98); transform-origin: top right;
+          pointer-events: none; transition: opacity .14s var(--ease), transform .14s var(--ease); }
+  .dd.open .menu { opacity: 1; transform: none; pointer-events: auto; }
+  .menu div { display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 12px; border-radius: 9px; white-space: nowrap; cursor: pointer; }
+  .menu div:hover, .menu div.kb { background: var(--tint); }
+  .menu div::after { content: ""; width: 14px; height: 14px; margin-left: auto; }
+  .menu div.sel::after { background: no-repeat center/14px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23888' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3.5 8.5l3 3 6-7'/%3E%3C/svg%3E"); }
+  /* Segmented control */
+  .seg { display: flex; background: var(--tint); border-radius: 10px; padding: 3px; position: relative; }
+  .seg button { font: inherit; font-size: 13px; color: var(--fg2); background: none; border: 0; border-radius: 8px; height: 28px;
+                padding: 0 14px; cursor: pointer; position: relative; z-index: 1; transition: color .14s var(--ease); }
+  .seg button.on { color: var(--fg); }
+  .seg i { position: absolute; top: 3px; bottom: 3px; border-radius: 8px; background: var(--surface);
+           box-shadow: 0 1px 3px rgba(0,0,0,.18); transition: left .2s var(--ease), width .2s var(--ease); }
+  :root[data-theme="dark"] .seg i { background: rgba(255,255,255,.14); box-shadow: none; }
+  /* Inputs */
+  input[type=text], input[type=number] { font: inherit; color: var(--fg); background: var(--tint); border: 0; border-radius: 10px;
+                                         height: 34px; padding: 0 12px; outline: none; transition: background .12s var(--ease); }
+  input[type=text]:hover, input[type=number]:hover { background: var(--tint2); }
+  input[type=number] { width: 80px; text-align: right; }
+  input[type=number]::-webkit-inner-spin-button { display: none; }
+  .unit { color: var(--fg3); margin-left: -8px; width: 26px; }
+  input.wide { width: 100%; margin-top: 8px; }
+  /* Switch */
+  .switch { position: relative; width: 44px; height: 26px; flex: none; }
+  .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
+  .switch i { position: absolute; inset: 0; border-radius: 13px; background: var(--tint2); transition: background .2s var(--ease); }
+  .switch i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+                     background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .2s var(--ease), background .2s var(--ease); }
+  .switch input:checked + i { background: var(--on); }
+  .switch input:checked + i::after { transform: translateX(18px); background: var(--knob-on); }
+  :focus-visible { outline: 2px solid var(--fg3); outline-offset: 2px; border-radius: 10px; }
+  .switch input:focus-visible + i { outline: 2px solid var(--fg3); outline-offset: 2px; }
+  .keys { width: auto; min-width: 180px; field-sizing: content; padding-inline: 12px; text-align: center; cursor: pointer; }
+  .keys:focus { background: var(--tint2); }
+  .notice { display: flex; align-items: center; gap: 12px; margin: -16px 0 24px; padding: 12px 16px; border-radius: 14px;
+            background: var(--surface); color: var(--fg2); opacity: 0; transform: translateY(-4px); pointer-events: none;
+            transition: opacity .2s var(--ease), transform .2s var(--ease); height: 0; padding-block: 0; overflow: hidden; }
+  .notice.show { opacity: 1; transform: none; height: auto; padding-block: 12px; }
+  button.quiet { font: inherit; color: var(--fg); background: var(--tint); border: 0; border-radius: 10px; height: 34px; padding: 0 14px; cursor: pointer; }
+  button.quiet:hover { background: var(--tint2); }
+  button.quiet:disabled { opacity: .55; cursor: default; }
+  .muted { color: var(--fg3); font-size: 12.5px; }
+  .logo { width: 26px; height: auto; }
+  :root:not([data-theme="dark"]) .logo { filter: drop-shadow(0 1px 1px rgba(0,0,0,.3)); }
+  /* Collapsible section: height animated from JS (see fold()). */
+  .fold { font: inherit; font-weight: 600; color: var(--fg3); background: none; border: 0; padding: 4px 8px 4px 0; margin-left: -2px;
+          display: inline-flex; align-items: center; gap: 6px; cursor: pointer; border-radius: 8px; }
+  .fold:hover { color: var(--fg2); }
+  .fold svg { width: 12px; height: 12px; stroke: currentColor; transition: transform .18s var(--ease); }
+  .fold[aria-expanded="true"] svg { transform: rotate(90deg); }
+  .bg-pick { display: block; padding-bottom: 16px; --ring-gap: var(--surface); }
+  .foldable { height: 0; overflow: hidden; }
+  .foldable.open { height: auto; }
+  ::selection { background: var(--fg); color: var(--bg); }
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--tint2); border-radius: 5px; border: 3px solid var(--bg); }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .06s !important; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Impostazioni</h1>
+  <div class="notice" id="restart">Alcune modifiche saranno attive al prossimo avvio.</div>
+
+  <h2>Generale</h2>
+  <section>
+    <div class="row">
+      <label>Motore di ricerca</label>
+      <div class="dd" id="engine" data-options='[
+        ["https://noai.duckduckgo.com/?q={}","DuckDuckGo senza AI"],
+        ["https://duckduckgo.com/?q={}","DuckDuckGo"],
+        ["https://search.brave.com/search?q={}","Brave Search"],
+        ["https://www.startpage.com/do/search?q={}","Startpage"],
+        ["https://www.google.com/search?q={}","Google"],
+        ["https://www.bing.com/search?q={}","Bing"],
+        ["custom","Personalizzato…"]]'></div>
+    </div>
+    <div class="row" id="custom-row" hidden>
+      <label style="flex-direction:column;align-items:stretch">Indirizzo di ricerca
+        <input type="text" class="wide" id="custom-engine" placeholder="https://esempio.com/search?q={}" spellcheck="false">
+      </label>
+    </div>
+    <div class="row">
+      <label>Nuova scheda
+        <span class="help" tabindex="0">?<span>Barra fluttuante: la ricerca appare sopra la pagina. Pagina: si apre una scheda vuota con la barra di ricerca.</span></span>
+      </label>
+      <div class="seg" data-key="new_tab_page" data-options='[[false,"Barra fluttuante"],[true,"Pagina"]]'></div>
+    </div>
+    <div class="row" id="bg-row" hidden>
+      <label>Sfondo della pagina</label>
+      <span class="switch"><input type="checkbox" data-key="new_tab_background"><i></i></span>
+    </div>
+    <div class="row bg-pick" id="bg-pick" hidden></div>
+    <div class="row">
+      <label>Riapri le schede all'avvio</label>
+      <span class="switch"><input type="checkbox" data-key="restore_session"><i></i></span>
+    </div>
+  </section>
+
+  <h2>Aspetto</h2>
+  <section>
+    <div class="row">
+      <label>Lingua</label>
+      <div class="dd" data-key="language" data-options='[["auto","Automatica"],["it","Italiano"],["en","English"]]'></div>
+    </div>
+    <div class="row">
+      <label>Tema</label>
+      <div class="dd" data-key="theme" data-options='[["auto","Come Windows"],["light","Chiaro"],["dark","Scuro"]]'></div>
+    </div>
+    <div class="row">
+      <label>Materiale
+        <span class="help" tabindex="0">?<span>Vetro: lo sfondo del desktop si vede sfocato dietro la barra laterale. Si spegne da solo se in Windows la trasparenza è disattivata.</span></span>
+      </label>
+      <div class="seg" data-key="glass" data-options='[[true,"Vetro"],[false,"Pieno"]]'></div>
+    </div>
+    <div class="row">
+      <label>Barra laterale
+        <span class="help" tabindex="0">?<span>Compatta: restano solo le icone dei siti; passandoci sopra col mouse la barra si apre sopra la pagina. A scomparsa: la pagina occupa tutta la finestra e la barra appare portando il mouse sul bordo sinistro. Ctrl+S alterna fissa e a scomparsa. La larghezza si cambia trascinando il bordo della barra.</span></span>
+      </label>
+      <div class="seg" data-key="sidebar" data-options='[["docked","Fissa"],["compact","Compatta"],["hidden","A scomparsa"]]'></div>
+    </div>
+    <div class="row">
+      <label>Barra del titolo di Windows
+        <span class="help" tabindex="0">?<span>Mostra la classica barra in alto con i pulsanti per ridurre, ingrandire e chiudere. Spenta, i pulsanti stanno nella barra laterale.</span></span>
+      </label>
+      <span class="switch"><input type="checkbox" data-key="title_bar"><i></i></span>
+    </div>
+    <div class="row">
+      <label>Pulsanti indietro, avanti e ricarica</label>
+      <span class="switch"><input type="checkbox" data-key="show_nav_buttons"><i></i></span>
+    </div>
+  </section>
+
+  <h2>Prestazioni</h2>
+  <section>
+    <div class="row">
+      <label>Sospendi le schede inattive dopo
+        <span class="help" tabindex="0">?<span>Una scheda sospesa resta in memoria ma non usa il processore. Si riprende all'istante. 0 = mai.</span></span>
+      </label>
+      <input type="number" min="0" max="1440" data-key="suspend_after_secs" data-mul="60"><span class="unit">min</span>
+    </div>
+    <div class="row">
+      <label>Libera la memoria delle schede dopo
+        <span class="help" tabindex="0">?<span>Restano titolo e indirizzo, l'icona diventa grigia. Si ricarica quando la apri. 0 = mai.</span></span>
+      </label>
+      <input type="number" min="0" max="1440" data-key="unload_after_secs" data-mul="60"><span class="unit">min</span>
+    </div>
+    <div class="row">
+      <label>Libera subito se la RAM libera scende sotto
+        <span class="help" tabindex="0">?<span>Con poca memoria libera nel PC, le schede inattive più vecchie vengono liberate subito. 0 = disattivato.</span></span>
+      </label>
+      <input type="number" min="0" max="65536" step="100" data-key="low_memory_mb"><span class="unit">MB</span>
+    </div>
+    <div class="row">
+      <label>Non toccare le schede che riproducono audio</label>
+      <span class="switch"><input type="checkbox" data-key="keep_audio_tabs"><i></i></span>
+    </div>
+    <div class="row">
+      <label>Modalità PC leggero
+        <span class="help" tabindex="0">?<span>Circa il 7% di memoria in meno, animazioni delle pagine un po' meno fluide. Attiva di default sotto gli 8 GB di RAM.</span></span>
+      </label>
+      <span class="switch"><input type="checkbox" data-key="low_end_mode" data-restart><i></i></span>
+    </div>
+  </section>
+
+  <h2>Privacy</h2>
+  <section>
+    <div class="row">
+      <label>Blocca pubblicità e tracker</label>
+      <span class="switch"><input type="checkbox" data-key="adblock" data-restart><i></i></span>
+    </div>
+    <div class="row">
+      <label>Protezione dal tracciamento
+        <span class="help" tabindex="0">?<span>Bilanciata blocca i tracker noti senza rompere gli accessi ai siti. Rigida blocca di più, ma qualche sito potrebbe non funzionare.</span></span>
+      </label>
+      <div class="dd" data-key="tracking_prevention" data-options='[["balanced","Bilanciata"],["strict","Rigida"],["basic","Base"],["off","Disattivata"]]'></div>
+    </div>
+    <div class="row">
+      <label>Proponi di salvare le password
+        <span class="help" tabindex="0">?<span>Disattivalo se usi un gestore di password come Bitwarden.</span></span>
+      </label>
+      <span class="switch"><input type="checkbox" data-key="save_passwords"><i></i></span>
+    </div>
+    <div class="row">
+      <label>Compila automaticamente i moduli</label>
+      <span class="switch"><input type="checkbox" data-key="autofill"><i></i></span>
+    </div>
+  </section>
+
+  <h2><button type="button" class="fold" aria-expanded="false" aria-controls="dl-box">Download
+    <svg viewBox="0 0 12 12" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 3l3 3-3 3"/></svg></button></h2>
+  <div id="dl-box" class="foldable">
+  <section>
+    <div class="row">
+      <label>Cartella <span class="muted" id="dl-folder"></span></label>
+      <button type="button" class="quiet" id="dl-open-folder">Apri cartella</button>
+    </div>
+    <div id="dl-list"></div>
+    <div class="row" id="dl-clear-row">
+      <label></label>
+      <button type="button" class="quiet" id="dl-clear">Svuota elenco</button>
+    </div>
+  </section>
+  </div>
+
+  <h2><button type="button" class="fold" aria-expanded="false" aria-controls="ext-box">Estensioni
+    <svg viewBox="0 0 12 12" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 3l3 3-3 3"/></svg></button></h2>
+  <div id="ext-box" class="foldable">
+  <section>
+    <div class="row">
+      <label>Chrome Web Store
+        <span class="help" tabindex="0">?<span>Apri lo store, scegli un'estensione e premi "Aggiungi a Chrome": il browser la scarica e la installa. Le estensioni vecchie (Manifest V2) non funzionano più in nessun browser basato su Chromium.</span></span>
+      </label>
+      <button type="button" class="quiet" id="ext-store">Apri lo store</button>
+    </div>
+    <div class="row">
+      <label>Carica da una cartella
+        <span class="help" tabindex="0">?<span>Per estensioni scompattate (la cartella con manifest.json), per esempio quelle che sviluppi tu.</span></span>
+      </label>
+      <button type="button" class="quiet" id="ext-folder">Scegli cartella</button>
+    </div>
+    <div id="ext-list"></div>
+  </section>
+  </div>
+
+  <h2><button type="button" class="fold" aria-expanded="false" aria-controls="shortcuts-box">Scorciatoie
+    <svg viewBox="0 0 12 12" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 3l3 3-3 3"/></svg></button></h2>
+  <div id="shortcuts-box" class="foldable">
+      <section id="shortcuts"></section>
+      <p class="muted" style="margin:10px 16px 0">Clicca una scorciatoia e premi i tasti nuovi. Canc la svuota, Esc annulla.</p>
+  </div>
+
+  <h2>Informazioni</h2>
+  <section>
+    <div class="row">
+      <label><img src="veyra.svg" alt="" aria-hidden="true" class="logo"> Veyra <span class="muted" id="version"></span></label>
+      <span class="muted" id="upd-msg" role="status" aria-live="polite"></span>
+      <button type="button" class="quiet" id="upd-btn">Cerca aggiornamenti</button>
+    </div>
+    <div class="row">
+      <label>Licenze
+        <span class="help" tabindex="0">?<span>Veyra: MIT. Adblock: adblock-rust di Brave (MPL-2.0). Liste: EasyList ed EasyPrivacy (GPLv3 / CC BY-SA, The EasyList authors), filtri e scriptlet di uBlock Origin (GPLv3). Motore web: Microsoft WebView2.</span></span>
+      </label>
+    </div>
+    <div class="row">
+      <label>Ripristina le impostazioni</label>
+      <button class="quiet" id="reset">Ripristina</button>
+    </div>
+  </section>
+</main>
+<script src="backgrounds.js"></script>
+<script>
+const NAMES = {
+  'new-tab': 'Nuova scheda', 'close-tab': 'Chiudi scheda', 'reopen-closed-tab': 'Riapri scheda chiusa',
+  'next-tab': 'Scheda successiva', 'prev-tab': 'Scheda precedente', 'tab1': 'Scheda 1', 'tab2': 'Scheda 2',
+  'tab3': 'Scheda 3', 'tab4': 'Scheda 4', 'tab5': 'Scheda 5', 'tab6': 'Scheda 6', 'tab7': 'Scheda 7',
+  'tab8': 'Scheda 8', 'last-tab': 'Ultima scheda', 'reload': 'Ricarica', 'hard-reload': 'Ricarica senza cache',
+  'back': 'Indietro', 'forward': 'Avanti', 'copy-url': "Copia l'indirizzo", 'focus-address': 'Barra degli indirizzi',
+  'command-bar': 'Barra comandi', 'toggle-sidebar': 'Mostra o nascondi la barra laterale', 'pin-tab': 'Fissa la scheda',
+  'bookmark': 'Aggiungi ai preferiti', 'find': 'Trova nella pagina', 'zoom-in': 'Ingrandisci', 'zoom-out': 'Riduci',
+  'zoom-reset': 'Zoom normale', 'show-shortcuts': 'Elenco scorciatoie', 'dev-tools': 'Strumenti per sviluppatori',
+  'settings': 'Impostazioni',
+};
+const CHEVRON = '<svg viewBox="0 0 12 12" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5l3 3 3-3"/></svg>';
+// English texts, keyed by the Italian original (applied when lang = en).
+const EN = {
+  'Impostazioni': 'Settings', 'Generale': 'General', 'Aspetto': 'Appearance', 'Prestazioni': 'Performance',
+  'Privacy': 'Privacy', 'Scorciatoie': 'Shortcuts', 'Informazioni': 'About',
+  'Alcune modifiche saranno attive al prossimo avvio.': 'Some changes will apply the next time you start the browser.',
+  'Motore di ricerca': 'Search engine', 'Personalizzato…': 'Custom…', 'Indirizzo di ricerca': 'Search address',
+  'DuckDuckGo senza AI': 'DuckDuckGo without AI',
+  'Nuova scheda': 'New tab', 'Barra fluttuante': 'Floating bar', 'Pagina': 'Page',
+  'Sfondo della pagina': 'Page background', 'La tua immagine': 'Your image', 'Tinta unita': 'Solid color', 'Gradiente': 'Gradient',
+  'Cambia immagine': 'Change image', "Questo file non è un'immagine che si può aprire.": "This file isn't an image that can be opened.",
+  'Barra fluttuante: la ricerca appare sopra la pagina. Pagina: si apre una scheda vuota con la barra di ricerca.':
+    'Floating bar: search appears over the page. Page: opens an empty tab with a search box.',
+  "Riapri le schede all'avvio": 'Reopen tabs at startup',
+  'Lingua': 'Language', 'Automatica': 'Automatic', 'Tema': 'Theme', 'Come Windows': 'Like Windows', 'Chiaro': 'Light', 'Scuro': 'Dark',
+  'Materiale': 'Material', 'Vetro': 'Glass', 'Pieno': 'Solid',
+  'Vetro: lo sfondo del desktop si vede sfocato dietro la barra laterale. Si spegne da solo se in Windows la trasparenza è disattivata.':
+    'Glass: the desktop shows through, blurred, behind the sidebar. It turns off by itself if transparency is off in Windows.',
+  'Barra laterale': 'Sidebar', 'Fissa': 'Docked', 'Compatta': 'Compact', 'A scomparsa': 'Auto-hide',
+  'Compatta: restano solo le icone dei siti; passandoci sopra col mouse la barra si apre sopra la pagina. A scomparsa: la pagina occupa tutta la finestra e la barra appare portando il mouse sul bordo sinistro. Ctrl+S alterna fissa e a scomparsa. La larghezza si cambia trascinando il bordo della barra.':
+    'Compact: only site icons stay; hover it and the sidebar opens over the page. Auto-hide: the page fills the window and the sidebar appears when the mouse reaches the left edge. Ctrl+S switches between docked and auto-hide. Drag the sidebar edge to change its width.',
+  'Pulsanti indietro, avanti e ricarica': 'Back, forward and reload buttons',
+  'Estensioni': 'Extensions', 'Apri lo store': 'Open the store', 'Carica da una cartella': 'Load from a folder', 'Scegli cartella': 'Choose folder',
+  'Apri lo store, scegli un\'estensione e premi "Aggiungi a Chrome": il browser la scarica e la installa. Le estensioni vecchie (Manifest V2) non funzionano più in nessun browser basato su Chromium.':
+    'Open the store, pick an extension and press "Add to Chrome": the browser downloads and installs it. Old extensions (Manifest V2) no longer work in any Chromium-based browser.',
+  'Per estensioni scompattate (la cartella con manifest.json), per esempio quelle che sviluppi tu.':
+    'For unpacked extensions (the folder with manifest.json), for example ones you develop.',
+  'Nessuna estensione installata': 'No extensions installed', 'Apri': 'Open', 'Rimuovi': 'Remove',
+  'Download': 'Downloads', 'Cartella': 'Folder', 'Apri cartella': 'Open folder', 'Svuota elenco': 'Clear list',
+  'Nessun download': 'No downloads', 'Mostra': 'Show',
+  'Barra del titolo di Windows': 'Windows title bar',
+  'Mostra la classica barra in alto con i pulsanti per ridurre, ingrandire e chiudere. Spenta, i pulsanti stanno nella barra laterale.':
+    'Shows the classic bar on top with the minimize, maximize and close buttons. Off: the buttons are in the sidebar.',
+  'Sospendi le schede inattive dopo': 'Suspend inactive tabs after',
+  "Una scheda sospesa resta in memoria ma non usa il processore. Si riprende all'istante. 0 = mai.":
+    'A suspended tab stays in memory but uses no CPU. It resumes instantly. 0 = never.',
+  'Libera la memoria delle schede dopo': 'Free tab memory after',
+  "Restano titolo e indirizzo, l'icona diventa grigia. Si ricarica quando la apri. 0 = mai.":
+    'Title and address are kept and the icon turns gray. It reloads when you open it. 0 = never.',
+  'Libera subito se la RAM libera scende sotto': 'Free memory early when free RAM drops below',
+  'Con poca memoria libera nel PC, le schede inattive più vecchie vengono liberate subito. 0 = disattivato.':
+    'When the PC is low on memory, the oldest inactive tabs are freed right away. 0 = off.',
+  'Non toccare le schede che riproducono audio': 'Leave tabs playing audio alone',
+  'Modalità PC leggero': 'Light PC mode',
+  "Circa il 7% di memoria in meno, animazioni delle pagine un po' meno fluide. Attiva di default sotto gli 8 GB di RAM.":
+    'About 7% less memory, slightly less smooth page animations. On by default with less than 8 GB of RAM.',
+  'Blocca pubblicità e tracker': 'Block ads and trackers', 'Protezione dal tracciamento': 'Tracking prevention',
+  'Bilanciata': 'Balanced', 'Rigida': 'Strict', 'Base': 'Basic', 'Disattivata': 'Off',
+  'Bilanciata blocca i tracker noti senza rompere gli accessi ai siti. Rigida blocca di più, ma qualche sito potrebbe non funzionare.':
+    'Balanced blocks known trackers without breaking sign-ins. Strict blocks more, but some sites may not work.',
+  'Proponi di salvare le password': 'Offer to save passwords',
+  'Disattivalo se usi un gestore di password come Bitwarden.': 'Turn it off if you use a password manager like Bitwarden.',
+  'Compila automaticamente i moduli': 'Autofill forms',
+  'Clicca una scorciatoia e premi i tasti nuovi. Canc la svuota, Esc annulla.': 'Click a shortcut and press the new keys. Delete clears it, Esc cancels.',
+  'Cerca aggiornamenti': 'Check for updates', 'Versione': 'Version', 'Licenze': 'Licenses', 'Ripristina le impostazioni': 'Reset settings', 'Ripristina': 'Reset', 'Nessuna': 'None',
+  'Veyra: MIT. Adblock: adblock-rust di Brave (MPL-2.0). Liste: EasyList ed EasyPrivacy (GPLv3 / CC BY-SA, The EasyList authors), filtri e scriptlet di uBlock Origin (GPLv3). Motore web: Microsoft WebView2.':
+    "Veyra: MIT. Adblock: Brave's adblock-rust (MPL-2.0). Lists: EasyList and EasyPrivacy (GPLv3 / CC BY-SA, The EasyList authors), uBlock Origin filters and scriptlets (GPLv3). Web engine: Microsoft WebView2.",
+};
+const NAMES_EN = {
+  'new-tab': 'New tab', 'close-tab': 'Close tab', 'reopen-closed-tab': 'Reopen closed tab', 'next-tab': 'Next tab',
+  'prev-tab': 'Previous tab', 'tab1': 'Tab 1', 'tab2': 'Tab 2', 'tab3': 'Tab 3', 'tab4': 'Tab 4', 'tab5': 'Tab 5',
+  'tab6': 'Tab 6', 'tab7': 'Tab 7', 'tab8': 'Tab 8', 'last-tab': 'Last tab', 'reload': 'Reload',
+  'hard-reload': 'Reload without cache', 'back': 'Back', 'forward': 'Forward', 'copy-url': 'Copy address',
+  'focus-address': 'Address bar', 'command-bar': 'Command bar', 'toggle-sidebar': 'Show or hide the sidebar',
+  'pin-tab': 'Pin tab', 'bookmark': 'Bookmark', 'find': 'Find in page', 'zoom-in': 'Zoom in', 'zoom-out': 'Zoom out',
+  'zoom-reset': 'Reset zoom', 'show-shortcuts': 'Shortcut list', 'dev-tools': 'Developer tools', 'settings': 'Settings',
+};
+let LANG = 'it';
+const tr = (s) => (LANG === 'en' && EN[s.trim()]) ? EN[s.trim()] : s;
+/// Translates every text node and placeholder of the page once.
+function translatePage() {
+  if (LANG !== 'en') return;
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const key = n.nodeValue.trim();
+    if (key && EN[key]) n.nodeValue = n.nodeValue.replace(key, EN[key]);
+  }
+  document.title = tr(document.title);
+  for (const el of document.querySelectorAll('[data-options]')) {
+    el.dataset.options = JSON.stringify(JSON.parse(el.dataset.options).map(([v, l]) => [v, tr(l)]));
+  }
+}
+let S = null;
+const send = (m) => window.chrome?.webview?.postMessage(m);
+const save = () => send({ type: 'set', settings: S });
+
+// ---- dropdown ----
+function buildDropdown(dd, onPick) {
+  const opts = JSON.parse(dd.dataset.options);
+  dd.innerHTML = `<button type="button" aria-haspopup="listbox"><span></span>${CHEVRON}</button><div class="menu" role="listbox"></div>`;
+  const btn = dd.querySelector('button'), menu = dd.querySelector('.menu');
+  for (const [v, label] of opts) {
+    const item = document.createElement('div');
+    item.textContent = label;
+    item.dataset.value = JSON.stringify(v);
+    item.setAttribute('role', 'option');
+    item.addEventListener('click', () => { close(); onPick(v); });
+    menu.append(item);
+  }
+  let kb = -1;
+  const items = () => [...menu.children];
+  const mark = () => items().forEach((it, i) => it.classList.toggle('kb', i === kb));
+  const close = () => { dd.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); };
+  const open = () => {
+    document.querySelectorAll('.dd.open').forEach((o) => o !== dd && o.classList.remove('open'));
+    dd.classList.add('open'); btn.setAttribute('aria-expanded', 'true');
+    kb = items().findIndex((it) => it.classList.contains('sel')); mark();
+  };
+  btn.addEventListener('click', (e) => { e.stopPropagation(); dd.classList.contains('open') ? close() : open(); });
+  btn.addEventListener('keydown', (e) => {
+    const n = items().length;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (!dd.classList.contains('open')) open();
+      kb = (kb + (e.key === 'ArrowDown' ? 1 : n - 1) + n) % n; mark();
+    } else if (e.key === 'Enter' && dd.classList.contains('open') && kb >= 0) {
+      e.preventDefault(); items()[kb].click();
+    } else if (e.key === 'Escape') close();
+  });
+  dd.set = (v) => {
+    const label = opts.find(([x]) => x === v)?.[1] ?? opts[opts.length - 1][1];
+    btn.querySelector('span').textContent = label;
+    items().forEach((it) => it.classList.toggle('sel', JSON.parse(it.dataset.value) === v));
+  };
+  dd.close = close;
+}
+document.addEventListener('click', () => document.querySelectorAll('.dd.open').forEach((d) => d.close()));
+
+// ---- segmented ----
+function buildSeg(seg, onPick) {
+  const opts = JSON.parse(seg.dataset.options);
+  seg.innerHTML = '<i></i>';
+  for (const [v, label] of opts) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.textContent = label; b.dataset.value = JSON.stringify(v);
+    b.addEventListener('click', () => onPick(v));
+    seg.append(b);
+  }
+  seg.set = (v) => {
+    const btns = [...seg.querySelectorAll('button')];
+    const on = btns.find((b) => JSON.parse(b.dataset.value) === v) ?? btns[0];
+    btns.forEach((b) => b.classList.toggle('on', b === on));
+    const pill = seg.querySelector('i');
+    pill.style.left = on.offsetLeft + 'px';
+    pill.style.width = on.offsetWidth + 'px';
+  };
+}
+
+const engine = document.getElementById('engine');
+function buildAll() {
+makeBgPicker();
+buildDropdown(engine, (v) => {
+  document.getElementById('custom-row').hidden = v !== 'custom';
+  if (v === 'custom') { engine.set('custom'); document.getElementById('custom-engine').focus(); return; }
+  S.search_url = v; engine.set(v); save();
+});
+for (const dd of document.querySelectorAll('.dd[data-key]')) buildDropdown(dd, (v) => { S[dd.dataset.key] = v; dd.set(v); save(); });
+for (const seg of document.querySelectorAll('.seg[data-key]')) buildSeg(seg, (v) => { S[seg.dataset.key] = v; seg.set(v); save(); renderBackground(); });
+}
+
+function render() {
+  for (const el of document.querySelectorAll('[data-key]')) {
+    const v = S[el.dataset.key];
+    if (el.set) el.set(v);
+    else if (el.type === 'checkbox') el.checked = !!v;
+    else if (el.dataset.mul) el.value = Math.round(v / el.dataset.mul);
+    else el.value = v;
+  }
+  renderBackground();
+  const known = JSON.parse(engine.dataset.options).some(([v]) => v === S.search_url);
+  engine.set(known ? S.search_url : 'custom');
+  document.getElementById('custom-row').hidden = known;
+  document.getElementById('custom-engine').value = S.search_url;
+  renderShortcuts();
+}
+
+// ---- new tab background ----
+let bgPicker = null; // built with the page's language (buildAll)
+const makeBgPicker = () => bgPicker = createBgPicker(document.getElementById('bg-pick'), {
+  t: (x) => (LANG === 'en' && (EN[x] || BG_EN[x])) || x,
+  choice: () => S.new_tab_bg,
+  pick: (v) => { S.new_tab_bg = v; save(); },
+  file: () => S.new_tab_bg_file ? 'https://veyra.background/' + S.new_tab_bg_file : null,
+  choose: () => send({ type: 'bg_pick' }),
+});
+function renderBackground() {
+  document.getElementById('bg-row').hidden = !S.new_tab_page;
+  document.getElementById('bg-pick').hidden = !S.new_tab_page || !S.new_tab_background;
+  bgPicker?.render();
+}
+
+function renderShortcuts() {
+  const box = document.getElementById('shortcuts');
+  box.textContent = '';
+  for (const [action, keys] of Object.entries(S.shortcuts)) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const label = document.createElement('label');
+    label.textContent = (LANG === 'en' ? NAMES_EN[action] : NAMES[action]) ?? action;
+    const input = document.createElement('input');
+    input.type = 'text'; input.className = 'keys'; input.readOnly = true;
+    input.value = keys.join(', '); input.placeholder = tr('Nessuna');
+    input.addEventListener('keydown', (e) => {
+      e.preventDefault();
+      if (e.key === 'Escape') { input.value = S.shortcuts[action].join(', '); input.blur(); return; }
+      if (e.key === 'Delete' || e.key === 'Backspace') { S.shortcuts[action] = []; input.value = ''; save(); return; }
+      const combo = comboOf(e);
+      if (!combo) return;
+      S.shortcuts[action] = [combo]; input.value = combo; save(); input.blur();
+    });
+    row.append(label, input);
+    box.append(row);
+  }
+}
+
+function comboOf(e) {
+  const named = { ArrowLeft: 'Left', ArrowRight: 'Right', ArrowUp: 'Up', ArrowDown: 'Down', ' ': 'Space',
+                  '+': 'Plus', '=': 'Plus', '-': 'Minus', '/': 'Slash', ',': 'Comma', '.': 'Period' };
+  if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return null;
+  let key = named[e.key] ?? (e.key.length === 1 ? e.key.toUpperCase() : e.key);
+  if (/^Digit\d$/.test(e.code)) key = e.code.slice(5);
+  if (!/^([A-Z0-9]|F\d{1,2}|Tab|Enter|Escape|Space|Left|Right|Up|Down|PageUp|PageDown|Home|End|Delete|Backspace|Plus|Minus|Slash|Comma|Period)$/.test(key)) return null;
+  const parts = [];
+  if (e.ctrlKey) parts.push('Ctrl');
+  if (e.shiftKey) parts.push('Shift');
+  if (e.altKey) parts.push('Alt');
+  return [...parts, key].join('+');
+}
+
+document.addEventListener('change', (e) => {
+  const el = e.target;
+  if (!S) return;
+  if (el.id === 'custom-engine') {
+    if (el.value.includes('{}') && /^https?:\/\//.test(el.value)) { S.search_url = el.value.trim(); save(); }
+    return;
+  }
+  const key = el.dataset.key;
+  if (!key) return;
+  if (el.type === 'checkbox') S[key] = el.checked;
+  else if (el.type === 'number') S[key] = Math.max(0, Number(el.value) || 0) * (Number(el.dataset.mul) || 1);
+  save();
+  renderBackground();
+});
+document.getElementById('reset').addEventListener('click', () => send({ type: 'reset' }));
+
+// ---- updates (About) ----
+const UPD = {
+  idle: ['', 'Cerca aggiornamenti', 'Check for updates'],
+  checking: ['', 'Controllo…', 'Checking…'],
+  uptodate: [['Sei aggiornato', 'You are up to date'], 'Cerca aggiornamenti', 'Check for updates'],
+  available: [['Disponibile la {v}', 'Version {v} is available'], 'Aggiorna e riavvia', 'Update and restart'],
+  downloading: [['Scarico la {v}… {p}%', 'Downloading {v}… {p}%'], 'Aggiorna e riavvia', 'Update and restart'],
+  installing: [['Installo…', 'Installing…'], 'Aggiorna e riavvia', 'Update and restart'],
+  failed: ['', 'Riprova', 'Try again'],
+};
+let UPDATE = { state: 'idle' };
+function renderUpdate() {
+  const u = UPDATE, en = LANG === 'en';
+  const [msg, it, eng] = UPD[u.state] || UPD.idle;
+  const text = u.state === 'failed' ? u.error : (Array.isArray(msg) ? msg[en ? 1 : 0] : msg);
+  document.getElementById('upd-msg').textContent = (text || '').replace('{v}', u.version || '').replace('{p}', Math.round((u.progress || 0) * 100));
+  const b = document.getElementById('upd-btn');
+  b.textContent = en ? eng : it;
+  b.disabled = ['checking', 'downloading', 'installing'].includes(u.state);
+}
+document.getElementById('upd-btn').addEventListener('click', () => {
+  send({ type: UPDATE.state === 'available' ? 'upd_install' : 'upd_check' });
+});
+
+// ---- downloads ----
+document.getElementById('dl-open-folder').addEventListener('click', () => send({ type: 'dl_folder' }));
+document.getElementById('dl-clear').addEventListener('click', () => send({ type: 'dl_clear' }));
+function renderDownloads(list, folder) {
+  document.getElementById('dl-folder').textContent = folder || '';
+  const box = document.getElementById('dl-list');
+  box.replaceChildren();
+  document.getElementById('dl-clear-row').hidden = !list.length;
+  if (!list.length) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `<span class="muted">${tr('Nessun download')}</span>`;
+    box.append(row);
+    return;
+  }
+  list.slice(0, 50).forEach((d, i) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const name = document.createElement('label');
+    name.textContent = d.name;
+    name.title = d.url;
+    const status = document.createElement('span');
+    status.className = 'muted';
+    status.textContent = d.status;
+    row.append(name, status);
+    const btn = (label, type) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'quiet'; b.textContent = tr(label);
+      b.addEventListener('click', () => send({ type, i }));
+      row.append(b);
+    };
+    if (d.done) btn('Apri', 'dl_open');
+    btn('Mostra', 'dl_show');
+    box.append(row);
+  });
+}
+
+// ---- extensions ----
+document.getElementById('ext-store').addEventListener('click', () => send({ type: 'ext_store' }));
+document.getElementById('ext-folder').addEventListener('click', () => send({ type: 'ext_folder' }));
+function renderExtensions(list) {
+  const box = document.getElementById('ext-list');
+  box.replaceChildren();
+  if (!list.length) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `<span class="muted">${tr('Nessuna estensione installata')}</span>`;
+    box.append(row);
+    return;
+  }
+  for (const x of list) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const name = document.createElement('label');
+    name.textContent = x.name;
+    row.append(name);
+    if (x.open) {
+      const open = document.createElement('button');
+      open.type = 'button'; open.className = 'quiet'; open.textContent = tr('Apri');
+      open.addEventListener('click', () => send({ type: 'ext_open', id: x.id }));
+      row.append(open);
+    }
+    const sw = document.createElement('span');
+    sw.className = 'switch';
+    sw.innerHTML = '<input type="checkbox"><i></i>';
+    const cb = sw.querySelector('input');
+    cb.checked = x.on;
+    cb.addEventListener('change', () => send({ type: 'ext_enable', id: x.id, on: cb.checked }));
+    row.append(sw);
+    const rm = document.createElement('button');
+    rm.type = 'button'; rm.className = 'quiet'; rm.textContent = tr('Rimuovi');
+    rm.addEventListener('click', () => {
+      send({ type: 'ext_remove', id: x.id });
+      row.remove();
+      setTimeout(() => send({ type: 'ext_list' }), 600);
+    });
+    row.append(rm);
+    box.append(row);
+  }
+}
+// The list changes when an extension is installed from the store tab.
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { send({ type: 'ext_list' }); send({ type: 'dl_list' }); } });
+// Collapsible sections: a quick, smooth slide (height + fade) both ways.
+function fold(btn) {
+  const box = document.getElementById(btn.getAttribute('aria-controls'));
+  const open = !box.classList.contains('open');
+  const from = box.getBoundingClientRect().height;
+  box.classList.toggle('open', open);
+  btn.setAttribute('aria-expanded', String(open));
+  const to = open ? box.scrollHeight : 0;
+  remember(box.id, open);
+  box.getAnimations().forEach((a) => a.cancel());
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  box.animate(
+    [{ height: from + 'px', opacity: open ? 0 : 1 }, { height: to + 'px', opacity: open ? 1 : 0 }],
+    { duration: Math.min(320, 160 + to / 12), easing: 'cubic-bezier(.2,.8,.2,1)' },
+  );
+}
+// Which sections were left open, kept across visits.
+function remember(id, open) {
+  try {
+    const o = JSON.parse(localStorage.getItem('open-sections') || '{}');
+    o[id] = open;
+    localStorage.setItem('open-sections', JSON.stringify(o));
+  } catch (e) { /* storage unavailable: just not remembered */ }
+}
+for (const b of document.querySelectorAll('.fold')) {
+  b.addEventListener('click', () => fold(b));
+  let o = {};
+  try { o = JSON.parse(localStorage.getItem('open-sections') || '{}'); } catch (e) {}
+  if (o[b.getAttribute('aria-controls')]) {
+    // Restored without animation, as it was left.
+    document.getElementById(b.getAttribute('aria-controls')).classList.add('open');
+    b.setAttribute('aria-expanded', 'true');
+  }
+}
+// Opened from the extensions button ("Manage extensions"): show that section.
+function showExtensions() {
+  const box = { '#extensions': 'ext-box', '#downloads': 'dl-box' }[location.hash];
+  if (!box) return;
+  const btn = document.querySelector(`[aria-controls=${box}]`);
+  if (btn.getAttribute('aria-expanded') !== 'true') fold(btn);
+  btn.scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+showExtensions();
+addEventListener('hashchange', showExtensions);
+
+window.chrome?.webview?.addEventListener('message', (e) => {
+  const m = e.data;
+  // Only replies that carry the theme set it (the extension list does not).
+  if (typeof m.dark === 'boolean') document.documentElement.dataset.theme = m.dark ? 'dark' : 'light';
+  if (m.type === 'settings') {
+    if (!S) { LANG = m.lang || 'it'; document.documentElement.lang = LANG; translatePage(); buildAll(); }
+    S = m.settings;
+    document.getElementById('version').textContent = m.version;
+    if (m.update) { UPDATE = m.update; renderUpdate(); }
+    render();
+  } else if (m.type === 'downloads') {
+    renderDownloads(m.list || [], m.folder);
+  } else if (m.type === 'extensions') {
+    renderExtensions(m.list || []);
+  } else if (m.type === 'saved') {
+    document.getElementById('restart').classList.toggle('show', m.restart);
+    if ((m.lang || 'it') !== LANG) location.reload(); // language changed
+  }
+});
+send({ type: 'get' });
+send({ type: 'ext_list' });
+send({ type: 'dl_list' });
+</script>
+</body>
+</html>

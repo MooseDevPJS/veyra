@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<title>Nuova scheda</title>
+<link rel="stylesheet" href="backgrounds.css">
+<style>
+  :root {
+    --bg: #F4F4F6; --fg: #1C1C1E; --fg3: rgba(28,28,30,.62); --field: #FFFFFF; --ring: rgba(0,0,0,.08);
+    --shadow: 0 10px 40px rgba(0,0,0,.08), 0 1px 3px rgba(0,0,0,.06);
+    --ease: cubic-bezier(.2,.8,.2,1);
+    font: 15px/1.4 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --bg: #161618; --fg: #F2F2F4; --fg3: rgba(242,242,244,.6); --field: #222226; --ring: rgba(255,255,255,.08);
+    --shadow: 0 10px 40px rgba(0,0,0,.35);
+    color-scheme: dark;
+  }
+  html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); }
+  /* Logo and search box: top, middle or bottom (the panel's "Posizione"). */
+  body { display: grid; justify-items: center; align-items: center; }
+  main { position: relative; z-index: 1; width: min(600px, 86vw); display: flex; flex-direction: column; align-items: center; gap: 28px; margin-top: -8vh;
+         animation: rise .32s var(--ease) both; }
+  :root[data-pos="top"] body { align-items: start; }
+  :root[data-pos="top"] main { margin-top: 14vh; }
+  :root[data-pos="bottom"] body { align-items: end; }
+  :root[data-pos="bottom"] main { margin: 0 0 12vh; }
+  @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .brand[hidden], .mark[hidden], h1[hidden] { display: none; }
+  .mark { width: 52px; height: auto; display: block; }
+  :root:not([data-theme="dark"]) .mark { filter: drop-shadow(0 1px 1px rgba(0,0,0,.25)); }
+  h1 { font-size: 30px; font-weight: 600; letter-spacing: -0.025em; margin: 0; }
+  form { width: 100%; position: relative; }
+  input { width: 100%; box-sizing: border-box; height: 56px; border-radius: 28px; border: 1px solid var(--ring);
+          background: var(--field); color: var(--fg); font: inherit; font-size: 16px; padding: 0 24px 0 54px;
+          box-shadow: var(--shadow); outline: none; transition: box-shadow .16s var(--ease), border-color .16s var(--ease); }
+  input::placeholder { color: var(--fg3); }
+  input:focus { border-color: var(--fg3); }
+  form svg { position: absolute; left: 21px; top: 19px; width: 18px; height: 18px; stroke: var(--fg3); }
+  ::selection { background: var(--fg); color: var(--bg); }
+  /* Background: the search box turns to glass; text and logo take the
+     tone that reads on it (from the background itself, or the panel). */
+  .backdrop { position: fixed; inset: 0; z-index: 0; opacity: 0; transition: opacity .3s var(--ease); background-position: center; background-size: cover; }
+  .backdrop.on { opacity: 1; }
+  .backdrop.instant { transition: none; }
+  .backdrop video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  :root[data-tone="dark"] { --fg: #F4F4F6; --fg3: rgba(244,244,246,.74); --field: rgba(22,22,26,.42); --ring: rgba(255,255,255,.16);
+                            --glow: 0 1px 14px rgba(0,0,0,.45); color-scheme: dark; }
+  :root[data-tone="light"] { --fg: #18181B; --fg3: rgba(24,24,27,.68); --field: rgba(255,255,255,.52); --ring: rgba(0,0,0,.1);
+                             --glow: 0 1px 14px rgba(255,255,255,.55); color-scheme: light; }
+  :root[data-tone] main input { backdrop-filter: blur(22px) saturate(1.5); }
+  :root[data-tone] h1 { text-shadow: var(--glow); }
+  :root[data-tone="dark"] .mark { filter: drop-shadow(0 2px 10px rgba(0,0,0,.35)); }
+  /* Black text: the (white) logo turns dark too. */
+  :root[data-tone="light"] .mark { filter: invert(1) drop-shadow(0 2px 10px rgba(255,255,255,.4)); }
+
+  /* Gear and panel (like Brave's): the panel keeps the theme's colors,
+     whatever the background's tone. */
+  .gear { position: fixed; top: 16px; right: 16px; z-index: 3; width: 36px; height: 36px; border-radius: 50%; border: 0; padding: 0;
+          display: grid; place-items: center; cursor: pointer; background: transparent; color: var(--fg3);
+          transition: background .14s var(--ease), color .14s var(--ease); }
+  .gear:hover, .gear[aria-expanded="true"] { background: var(--field); color: var(--fg); backdrop-filter: blur(22px) saturate(1.5); }
+  .gear svg, .close svg { width: 18px; height: 18px; stroke: currentColor; }
+  .panel { --fg: #1C1C1E; --fg2: rgba(28,28,30,.74); --fg3: rgba(28,28,30,.64); --tint: rgba(0,0,0,.05); --tint2: rgba(0,0,0,.09);
+           --line: rgba(0,0,0,.07); --ring-gap: #FBFBFC; --surface: rgba(251,251,252,.92); --knob: #FFFFFF; color-scheme: light;
+           position: fixed; top: 60px; right: 16px; z-index: 3; width: min(400px, calc(100vw - 32px)); max-height: calc(100vh - 76px);
+           overflow-y: auto; box-sizing: border-box; padding: 12px 18px 18px; border-radius: 18px; color: var(--fg); background: var(--surface);
+           backdrop-filter: blur(28px) saturate(1.4); box-shadow: 0 16px 50px rgba(0,0,0,.24), 0 2px 8px rgba(0,0,0,.1); font-size: 14px;
+           opacity: 0; transform: translateY(-6px) scale(.98); transform-origin: top right; pointer-events: none; visibility: hidden;
+           transition: opacity .16s var(--ease), transform .16s var(--ease), visibility 0s .16s; }
+  :root[data-theme="dark"] .panel { --fg: #F2F2F4; --fg2: rgba(242,242,244,.72); --fg3: rgba(242,242,244,.62); --tint: rgba(255,255,255,.07);
+           --tint2: rgba(255,255,255,.12); --line: rgba(255,255,255,.08); --ring-gap: #232327; --surface: rgba(35,35,39,.92); color-scheme: dark; }
+  .panel.open { opacity: 1; transform: none; pointer-events: auto; visibility: visible; transition: opacity .16s var(--ease), transform .16s var(--ease); }
+  .panel::-webkit-scrollbar { width: 8px; }
+  .panel::-webkit-scrollbar-thumb { background: var(--tint2); border-radius: 4px; }
+  .panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .panel h2 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  .close { width: 30px; height: 30px; border-radius: 50%; border: 0; padding: 0; background: none; color: var(--fg3); cursor: pointer; display: grid; place-items: center; }
+  .close:hover { background: var(--tint); color: var(--fg); }
+  .close svg { width: 12px; height: 12px; }
+  .panel-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
+  .panel hr { border: 0; border-top: 1px solid var(--line); margin: 14px 0 6px; }
+  .panel .bg-box { padding: 8px 0 4px; }
+  .panel .bg-box[hidden] { display: none; }
+  .panel button.quiet { font: inherit; color: var(--fg); background: var(--tint); border: 0; border-radius: 10px; height: 34px; padding: 0 14px; cursor: pointer; }
+  .panel button.quiet:hover { background: var(--tint2); }
+  .panel .muted { color: var(--fg3); font-size: 12.5px; }
+  /* Segmented choice and on/off pills: small, one line each. */
+  .seg { display: flex; background: var(--tint); border-radius: 10px; padding: 3px; gap: 2px; }
+  .seg button, .pill { font: inherit; font-size: 13px; color: var(--fg2); border: 0; border-radius: 8px; height: 28px; padding: 0 12px; cursor: pointer;
+                       background: none; transition: color .14s var(--ease), background .14s var(--ease), box-shadow .14s var(--ease); }
+  .seg button:hover, .pill:hover { color: var(--fg); }
+  .seg button[aria-pressed="true"] { color: var(--fg); background: var(--ring-gap); box-shadow: 0 1px 3px rgba(0,0,0,.16); }
+  :root[data-theme="dark"] .seg button[aria-pressed="true"] { background: rgba(255,255,255,.14); box-shadow: none; }
+  .pills { display: flex; gap: 6px; }
+  .pill { background: var(--tint); display: inline-flex; align-items: center; gap: 6px; }
+  .pill svg { width: 12px; height: 12px; stroke: currentColor; opacity: 0; transition: opacity .14s var(--ease); }
+  .pill[aria-pressed="true"] { color: var(--fg); background: var(--tint2); }
+  .pill[aria-pressed="true"] svg { opacity: 1; }
+  .switch { position: relative; width: 44px; height: 26px; flex: none; }
+  .switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
+  .switch i { position: absolute; inset: 0; border-radius: 13px; background: var(--tint2); transition: background .2s var(--ease); }
+  .switch i::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+                     background: #FFFFFF; box-shadow: 0 1px 3px rgba(0,0,0,.3); transition: transform .2s var(--ease), background .2s var(--ease); }
+  .switch input:checked + i { background: var(--fg); }
+  .switch input:checked + i::after { transform: translateX(18px); background: var(--ring-gap); }
+  .switch input:focus-visible + i, .panel button:focus-visible, .gear:focus-visible { outline: 2px solid var(--fg3); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { main { animation-duration: .01s; } .backdrop, .panel { transition: none; } }
+</style>
+</head>
+<body>
+<div class="backdrop" id="backdrop"></div>
+<script>
+// The last look, kept by this page: applied before the first paint so a
+// new tab opens already dressed (the host's settings follow and update it).
+(() => {
+  try {
+    const c = JSON.parse(localStorage.getItem('veyra-newtab') || 'null');
+    if (!c) return;
+    const r = document.documentElement;
+    r.dataset.theme = c.dark ? 'dark' : 'light';
+    r.dataset.pos = c.pos;
+    if (c.tone) r.dataset.tone = c.tone;
+    if (c.bg) {
+      const el = document.getElementById('backdrop');
+      el.classList.add('instant', 'on');
+      if (c.video) el.innerHTML = `<video src="${c.bg}" crossorigin="anonymous" autoplay muted loop playsinline></video>`;
+      else el.style.background = c.bg;
+    }
+    window.CACHED = c;
+  } catch {}
+})();
+</script>
+<button type="button" class="gear" id="gear" aria-expanded="false" aria-controls="panel" aria-label="Personalizza" title="Personalizza">
+  <svg viewBox="0 0 20 20" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15.93,7.87 L17.99,8.17 L17.99,11.83 L15.93,12.13 L15.70,12.68 L16.94,14.36 L14.36,16.94 L12.68,15.70 L12.13,15.93 L11.83,17.99 L8.17,17.99 L7.87,15.93 L7.32,15.70 L5.64,16.94 L3.06,14.36 L4.30,12.68 L4.07,12.13 L2.01,11.83 L2.01,8.17 L4.07,7.87 L4.30,7.32 L3.06,5.64 L5.64,3.06 L7.32,4.30 L7.87,4.07 L8.17,2.01 L11.83,2.01 L12.13,4.07 L12.68,4.30 L14.36,3.06 L16.94,5.64 L15.70,7.32Z"/><circle cx="10" cy="10" r="2.5"/></svg>
+</button>
+<section class="panel" id="panel" role="dialog" aria-labelledby="panel-title">
+  <div class="panel-head">
+    <h2 id="panel-title" data-t>Personalizza</h2>
+    <button type="button" class="close" id="close" aria-label="Chiudi"><svg viewBox="0 0 12 12" fill="none" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/></svg></button>
+  </div>
+  <div class="panel-row">
+    <label for="bg-on" data-t>Sfondo della pagina</label>
+    <span class="switch"><input type="checkbox" id="bg-on"><i></i></span>
+  </div>
+  <div class="bg-box" id="bg-box" hidden></div>
+  <hr>
+  <div class="panel-row">
+    <span data-t id="lbl-text">Testo e logo</span>
+    <div class="seg" role="group" aria-labelledby="lbl-text" data-key="new_tab_text">
+      <button type="button" data-v="auto" data-t>Auto</button><button type="button" data-v="light" data-t>Bianco</button><button type="button" data-v="dark" data-t>Nero</button>
+    </div>
+  </div>
+  <div class="panel-row">
+    <span data-t id="lbl-pos">Posizione</span>
+    <div class="seg" role="group" aria-labelledby="lbl-pos" data-key="new_tab_position">
+      <button type="button" data-v="top" data-t>In alto</button><button type="button" data-v="middle" data-t>Al centro</button><button type="button" data-v="bottom" data-t>In basso</button>
+    </div>
+  </div>
+  <div class="panel-row">
+    <span data-t id="lbl-show">Mostra</span>
+    <div class="pills" role="group" aria-labelledby="lbl-show">
+      <button type="button" class="pill" data-key="new_tab_logo"><svg viewBox="0 0 12 12" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5l2.2 2.2 4.8-5.2"/></svg><span data-t>Logo</span></button>
+      <button type="button" class="pill" data-key="new_tab_name"><svg viewBox="0 0 12 12" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6.5l2.2 2.2 4.8-5.2"/></svg><span data-t>Nome</span></button>
+    </div>
+  </div>
+</section>
+<main>
+  <div class="brand" id="brand"><img class="mark" id="mark" src="veyra.svg" alt="" aria-hidden="true"><h1 id="name">Veyra</h1></div>
+  <form id="f">
+    <svg viewBox="0 0 16 16" fill="none" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5l3 3"/></svg>
+    <input id="q" autofocus autocomplete="off" spellcheck="false" placeholder="Cerca o scrivi un indirizzo" aria-label="Cerca o scrivi un indirizzo">
+  </form>
+</main>
+<script src="backgrounds.js"></script>
+<script>
+const send = (m) => window.chrome?.webview?.postMessage(m);
+document.getElementById('f').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const q = document.getElementById('q').value.trim();
+  if (q) send({ type: 'go', q });
+});
+const EN = Object.assign({
+  'Personalizza': 'Customize', 'Chiudi': 'Close', 'Testo e logo': 'Text and logo', 'Auto': 'Auto', 'Bianco': 'White', 'Nero': 'Black',
+  'Posizione': 'Position', 'In alto': 'Top', 'Al centro': 'Middle', 'In basso': 'Bottom', 'Mostra': 'Show', 'Logo': 'Logo', 'Nome': 'Name',
+  'Cerca o scrivi un indirizzo': 'Search or enter address', 'Nuova scheda': 'New tab',
+}, BG_EN);
+let S = null, LANG = 'it', picker = null;
+const t = (x) => (LANG === 'en' && EN[x]) || x;
+const root = document.documentElement;
+const backdrop = document.getElementById('backdrop');
+// Colors and gradients whose text reads best dark.
+const LIGHT = new Set(['color:6', 'color:7', 'gradient:5']);
+const fileUrl = () => S.new_tab_bg_file ? 'https://veyra.background/' + S.new_tab_bg_file : null;
+const tones = JSON.parse(localStorage.getItem('veyra-tones') || '{}');   // per file
+
+// Brightness of an image or a video frame (same origin), from a 16x16 copy.
+function measure(media) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 16;
+  const g = c.getContext('2d');
+  g.drawImage(media, 0, 0, 16, 16);
+  const d = g.getImageData(0, 0, 16, 16).data;
+  let sum = 0;
+  for (let i = 0; i < d.length; i += 4) sum += 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2];
+  return sum / (d.length / 4) > 150 ? 'light' : 'dark';
+}
+
+let shown = '';   // what the backdrop shows now
+function showBackground() {
+  const on = S.new_tab_background && (S.new_tab_bg !== 'image' || fileUrl());
+  const choice = on ? S.new_tab_bg : '';
+  const url = choice === 'image' ? fileUrl() : null;
+  const video = !!url && isVideo(url);
+  const key = choice + '|' + (url || '');
+  let tone = choice && choice !== 'image' ? (LIGHT.has(choice) ? 'light' : 'dark') : (url ? tones[url] : null);
+  if (key !== shown) {
+    shown = key;
+    backdrop.classList.remove('instant');
+    if (!choice) {
+      backdrop.classList.remove('on');
+    } else if (video) {
+      if (backdrop.querySelector('video')?.getAttribute('src') !== url) {
+        backdrop.style.background = '';
+        backdrop.innerHTML = `<video src="${url}" crossorigin="anonymous" autoplay muted loop playsinline></video>`;
+      }
+      backdrop.classList.add('on');
+    } else {
+      backdrop.textContent = '';
+      backdrop.style.background = bgCss(choice, url);
+      backdrop.classList.add('on');
+    }
+    // The user's own file: its brightness, once (then remembered).
+    if (url && !tones[url]) {
+      const media = video ? backdrop.querySelector('video') : new Image();
+      const done = () => { try { tones[url] = measure(media); localStorage.setItem('veyra-tones', JSON.stringify(tones)); } catch {} apply(); };
+      if (video) media.addEventListener('loadeddata', done, { once: true });
+      else { media.crossOrigin = 'anonymous'; media.onload = done; media.src = url; }
+    }
+  }
+  if (S.new_tab_text !== 'auto') tone = S.new_tab_text === 'light' ? 'dark' : 'light';   // white text reads on dark
+  if (tone) root.dataset.tone = tone; else delete root.dataset.tone;
+  localStorage.setItem('veyra-newtab', JSON.stringify({
+    dark: root.dataset.theme === 'dark', pos: S.new_tab_position, tone: tone || null,
+    bg: choice ? (video ? url : bgCss(choice, url)) : null, video,
+  }));
+}
+function isVideo(u) { return /\.(mp4|m4v|webm|mov)$/i.test(u); }
+
+function apply() {
+  if (!S) return;
+  root.dataset.pos = S.new_tab_position;
+  document.getElementById('mark').hidden = !S.new_tab_logo;
+  document.getElementById('name').hidden = !S.new_tab_name;
+  document.getElementById('brand').hidden = !S.new_tab_logo && !S.new_tab_name;
+  showBackground();
+  document.getElementById('bg-on').checked = !!S.new_tab_background;
+  document.getElementById('bg-box').hidden = !S.new_tab_background;
+  for (const seg of document.querySelectorAll('.seg[data-key]'))
+    for (const b of seg.children) b.setAttribute('aria-pressed', String(S[seg.dataset.key] === b.dataset.v));
+  for (const p of document.querySelectorAll('.pill')) p.setAttribute('aria-pressed', String(!!S[p.dataset.key]));
+  picker?.render();
+}
+const save = () => { send({ type: 'set', settings: S }); apply(); };
+
+// ---- panel ----
+const panel = document.getElementById('panel'), gear = document.getElementById('gear');
+const setOpen = (open, byKeyboard) => {
+  panel.classList.toggle('open', open);
+  gear.setAttribute('aria-expanded', String(open));
+  if (open && byKeyboard) setTimeout(() => panel.querySelector('#bg-on').focus({ preventScroll: true }), 30);
+  else if (panel.contains(document.activeElement)) gear.focus();
+};
+// Opened from the keyboard (Enter/Space: no click position), focus moves in.
+gear.addEventListener('click', (e) => { e.stopPropagation(); setOpen(!panel.classList.contains('open'), e.detail === 0); });
+document.getElementById('close').addEventListener('click', () => setOpen(false));
+panel.addEventListener('click', (e) => e.stopPropagation());
+document.addEventListener('click', () => setOpen(false));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && panel.classList.contains('open')) setOpen(false); });
+document.getElementById('bg-on').addEventListener('change', (e) => { S.new_tab_background = e.target.checked; save(); });
+for (const seg of document.querySelectorAll('.seg[data-key]'))
+  for (const b of seg.children) b.addEventListener('click', () => { S[seg.dataset.key] = b.dataset.v; save(); });
+for (const p of document.querySelectorAll('.pill')) p.addEventListener('click', () => { S[p.dataset.key] = !S[p.dataset.key]; save(); });
+
+// A video in a hidden tab does not need to play.
+document.addEventListener('visibilitychange', () => {
+  const v = backdrop.querySelector('video');
+  if (v) document.hidden ? v.pause() : v.play().catch(() => {});
+});
+
+window.chrome?.webview?.addEventListener('message', (e) => {
+  root.dataset.theme = e.data.dark ? 'dark' : 'light';
+  if (!e.data.settings) return;
+  // "saved" confirms what this page just did: keeping our own copy avoids an
+  // older reply undoing a quicker click.
+  if (e.data.type === 'saved' && S) return;
+  S = e.data.settings;
+  if (!picker) {
+    LANG = e.data.lang === 'en' ? 'en' : 'it';
+    if (LANG === 'en') {
+      document.documentElement.lang = 'en';
+      for (const el of document.querySelectorAll('[data-t]')) el.textContent = t(el.textContent.trim());
+      for (const el of [gear, document.getElementById('close')]) el.setAttribute('aria-label', t(el.getAttribute('aria-label')));
+      gear.title = t(gear.title);
+      const q = document.getElementById('q');
+      q.placeholder = t(q.placeholder); q.setAttribute('aria-label', q.placeholder);
+      document.title = t(document.title);
+    }
+    picker = createBgPicker(document.getElementById('bg-box'), {
+      t,
+      choice: () => S.new_tab_bg,
+      pick: (v) => { S.new_tab_bg = v; save(); },
+      file: fileUrl,
+      choose: () => send({ type: 'bg_pick' }),
+    });
+  }
+  apply();
+});
+send({ type: 'get' });
+setTimeout(() => document.getElementById('q').focus(), 50);
+</script>
+</body>
+</html>

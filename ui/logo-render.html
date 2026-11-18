@@ -1,0 +1,14 @@
+<!DOCTYPE html><html><head><style>
+  body { margin: 0; background: transparent; }
+  #box { width: 1024px; height: 1024px; display: grid; place-items: center; }
+  #box svg { width: 900px; height: auto; }
+  .icon #box svg { width: 1000px; }
+  .icon path[stroke-opacity], .icon g { stroke-opacity: .62; stroke-width: 16; }
+</style></head><body>
+<div id="box"></div>
+<script>
+// ?icon: the app-icon variant (bolder outline, fills the square): it must
+// read at 16 px on a light taskbar.
+if (location.search.includes('icon')) document.body.className = 'icon';
+fetch('veyra.svg').then((r) => r.text()).then((t) => { document.getElementById('box').innerHTML = t; document.title = 'ready'; });
+</script></body></html>
