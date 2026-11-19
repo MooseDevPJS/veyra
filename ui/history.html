@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<title>Cronologia</title>
+<style>
+  :root {
+    --glass: rgba(251,251,252,.80);
+    --fg: #1C1C1E; --fg2: rgba(28,28,30,.74); --fg3: rgba(28,28,30,.62);
+    --line: rgba(0,0,0,.08); --tint: rgba(0,0,0,.05); --tint2: rgba(0,0,0,.09);
+    --menu: rgba(251,251,252,.94); --shadow: 0 12px 40px rgba(0,0,0,.16), 0 2px 8px rgba(0,0,0,.08);
+    --ease: cubic-bezier(.2,.8,.2,1); --out: cubic-bezier(.16,1,.3,1);
+    font: 14px/1.45 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    --glass: rgba(31,31,34,.78);
+    --fg: #F2F2F4; --fg2: rgba(242,242,244,.74); --fg3: rgba(242,242,244,.6);
+    --line: rgba(255,255,255,.08); --tint: rgba(255,255,255,.06); --tint2: rgba(255,255,255,.11);
+    --menu: rgba(40,40,44,.96); --shadow: 0 12px 40px rgba(0,0,0,.5), 0 2px 8px rgba(0,0,0,.3);
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; background: transparent; color: var(--fg); }
+  body { display: flex; flex-direction: column; background: var(--glass); border: 1px solid var(--line); border-radius: 18px;
+         overflow: hidden; animation: enter .26s var(--out) both; }
+  @keyframes enter { from { transform: translateX(-14px); } }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--fg3); outline-offset: 1px; border-radius: 10px; }
+  ::selection { background: var(--fg); color: var(--glass); }
+  svg { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+  /* Header: title, search, clear */
+  header { padding: 18px 16px 12px 20px; flex: none; }
+  .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  h1 { font-size: 22px; font-weight: 600; letter-spacing: -0.02em; margin: 0; }
+  .icon-btn { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; color: var(--fg2);
+              transition: background .12s var(--ease), color .12s var(--ease); }
+  .icon-btn:hover { background: var(--tint); color: var(--fg); }
+  .icon-btn svg { width: 14px; height: 14px; }
+  .tools { display: flex; gap: 8px; }
+  .search { flex: 1; display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 12px; border-radius: 10px;
+            background: var(--tint); color: var(--fg3); transition: background .12s var(--ease); }
+  .search:hover, .search:focus-within { background: var(--tint2); }
+  .search svg { width: 15px; height: 15px; }
+  .search input { flex: 1; min-width: 0; font: inherit; color: var(--fg); background: none; border: 0; outline: none; height: 100%; }
+  .search input::placeholder { color: var(--fg3); }
+  .search input::-webkit-search-cancel-button { display: none; }
+  .dd { position: relative; }
+  .dd > button { height: 36px; padding: 0 12px 0 14px; border-radius: 10px; background: var(--tint); display: flex; align-items: center; gap: 8px;
+                 transition: background .12s var(--ease); }
+  .dd > button:hover, .dd.open > button { background: var(--tint2); }
+  .dd > button svg { width: 12px; height: 12px; color: var(--fg2); transition: transform .16s var(--ease); }
+  .dd.open > button svg { transform: rotate(180deg); }
+  .menu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 200px; padding: 6px; border-radius: 14px; z-index: 10;
+          background: var(--menu); box-shadow: var(--shadow); border: 1px solid var(--line);
+          opacity: 0; transform: translateY(-4px) scale(.98); transform-origin: top right; pointer-events: none;
+          transition: opacity .14s var(--ease), transform .14s var(--ease); }
+  .dd.open .menu { opacity: 1; transform: none; pointer-events: auto; }
+  .menu button { display: block; width: 100%; text-align: left; padding: 8px 12px; border-radius: 9px; white-space: nowrap; }
+  .menu button:hover, .menu button:focus-visible { background: var(--tint); outline: none; }
+
+  /* Confirmation for bulk deletes */
+  .confirm { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding: 8px 8px 8px 14px; border-radius: 12px; background: var(--tint); }
+  .confirm span { flex: 1; color: var(--fg2); font-size: 13px; }
+  .confirm button { height: 30px; padding: 0 12px; border-radius: 8px; font-size: 13px; }
+  .confirm .no:hover { background: var(--tint2); }
+  .confirm .yes { background: var(--fg); color: var(--glass); font-weight: 600; }
+  .confirm .yes:hover { opacity: .88; }
+
+  /* List */
+  main { flex: 1; overflow-y: auto; padding: 0 8px 16px; scrollbar-gutter: stable; }
+  main::-webkit-scrollbar { width: 10px; }
+  main::-webkit-scrollbar-thumb { background: var(--tint2); border-radius: 5px; border: 3px solid transparent; background-clip: content-box; }
+  .day + .day { margin-top: 10px; }
+  .day-head { display: flex; align-items: center; gap: 8px; padding: 14px 6px 6px 12px; }
+  h2 { flex: 1; margin: 0; font-size: 13px; font-weight: 600; color: var(--fg2); }
+  h2 span { font-weight: 400; color: var(--fg3); }
+  .day-clear { font-size: 12.5px; color: var(--fg3); height: 26px; padding: 0 10px; border-radius: 8px;
+               transition: background .12s var(--ease), color .12s var(--ease); }
+  .day-clear:hover { background: var(--tint); color: var(--fg); }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { display: flex; align-items: center; border-radius: 10px; transition: background .1s var(--ease); }
+  li:hover, li:focus-within { background: var(--tint); }
+  .visit { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 8px 0 12px; text-align: left; }
+  .visit:focus-visible { outline-offset: -2px; }
+  .ic { width: 16px; height: 16px; flex: none; display: grid; place-items: center; color: var(--fg3); }
+  .ic img { width: 16px; height: 16px; border-radius: 3px; }
+  .ic svg { width: 15px; height: 15px; }
+  /* The title gives way first; the site keeps up to a third of the row. */
+  .t { flex: 0 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .h { flex: 0 0 auto; max-width: 34%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--fg3); font-size: 12.5px; }
+  .gap { flex: 1; }
+  time { flex: none; color: var(--fg3); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .del { width: 28px; height: 28px; margin: 0 6px 0 4px; border-radius: 50%; display: grid; place-items: center; color: var(--fg3); opacity: 0;
+         transition: opacity .1s var(--ease), background .12s var(--ease), color .12s var(--ease); }
+  li:hover .del, li:focus-within .del { opacity: 1; }
+  .del:hover { background: var(--tint2); color: var(--fg); }
+  .del svg { width: 12px; height: 12px; }
+  .empty { margin: 48px 24px; text-align: center; color: var(--fg3); }
+  .empty strong { display: block; color: var(--fg2); font-weight: 600; margin-bottom: 4px; }
+  #more { height: 1px; }
+  @media (prefers-reduced-motion: reduce) { body { animation: none; } *, *::before, *::after { transition-duration: .06s !important; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-globe" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2"/><path d="M1.8 8h12.4M8 1.8c1.7 1.8 2.5 3.9 2.5 6.2s-.8 4.4-2.5 6.2M8 1.8C6.3 3.6 5.5 5.7 5.5 8s.8 4.4 2.5 6.2"/></symbol>
+  <symbol id="i-x" viewBox="0 0 12 12"><path d="M3 3l6 6M9 3l-6 6"/></symbol>
+</svg>
+<header>
+  <div class="top">
+    <h1 id="title">Cronologia</h1>
+    <button type="button" class="icon-btn" id="close"><svg viewBox="0 0 12 12"><use href="#i-x"/></svg></button>
+  </div>
+  <div class="tools">
+    <label class="search">
+      <svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.6"/><path d="M10.4 10.4L14 14"/></svg>
+      <input id="q" type="search" autocomplete="off" spellcheck="false">
+    </label>
+    <div class="dd" id="clear">
+      <button type="button" aria-haspopup="menu" aria-expanded="false"><span id="clear-label"></span><svg viewBox="0 0 12 12"><path d="M3 4.5l3 3 3-3"/></svg></button>
+      <div class="menu" role="menu">
+        <button type="button" role="menuitem" data-range="hour"></button>
+        <button type="button" role="menuitem" data-range="today"></button>
+        <button type="button" role="menuitem" data-range="all"></button>
+      </div>
+    </div>
+  </div>
+  <div class="confirm" id="confirm" role="alertdialog" aria-labelledby="confirm-text" hidden>
+    <span id="confirm-text"></span>
+    <button type="button" class="no" id="confirm-no"></button>
+    <button type="button" class="yes" id="confirm-yes"></button>
+  </div>
+</header>
+<main id="list" tabindex="-1">
+  <div id="days"></div>
+  <p class="empty" id="empty" hidden><strong id="empty-title"></strong><span id="empty-text"></span></p>
+  <div id="more"></div>
+</main>
+<script>
+const q0 = new URLSearchParams(location.search);
+const EN = (q0.get('l') || navigator.language).toLowerCase().slice(0, 2) !== 'it';
+const LOCALE = EN ? 'en' : 'it';
+document.documentElement.lang = LOCALE;
+document.documentElement.dataset.theme = q0.get('d') === '1' ? 'dark' : 'light';
+const T = {
+  title: ['Cronologia', 'History'], close: ['Chiudi', 'Close'], search: ['Cerca nella cronologia', 'Search history'],
+  clear: ['Cancella', 'Clear'], hour: ["Ultima ora", 'Last hour'], today: ['Oggi', 'Today'], all: ['Tutta la cronologia', 'All history'],
+  yes: ['Cancella', 'Clear'], no: ['Annulla', 'Cancel'], yesterday: ['Ieri', 'Yesterday'],
+  askHour: ["Cancellare le visite dell'ultima ora?", 'Clear the visits of the last hour?'],
+  askToday: ['Cancellare le visite di oggi?', "Clear today's visits?"],
+  askAll: ['Cancellare tutta la cronologia? Non si può annullare.', "Clear all history? This can't be undone."],
+  askDay: ['Cancellare le visite di {d}?', 'Clear the visits of {d}?'],
+  dayClear: ['Cancella il giorno', 'Clear day'], remove: ['Rimuovi dalla cronologia', 'Remove from history'],
+  emptyTitle: ['Ancora nessuna visita', 'No visits yet'], emptyText: ['Le pagine che apri compariranno qui.', 'The pages you open will show up here.'],
+  noneTitle: ['Nessun risultato', 'No results'], noneText: ['Nessuna visita contiene “{q}”.', 'No visit matches “{q}”.'],
+};
+const tr = (k) => T[k][EN ? 1 : 0];
+const $ = (id) => document.getElementById(id);
+document.title = tr('title');
+$('title').textContent = tr('title');
+$('close').setAttribute('aria-label', tr('close'));
+$('q').placeholder = tr('search');
+$('q').setAttribute('aria-label', tr('search'));
+$('clear-label').textContent = tr('clear');
+for (const b of document.querySelectorAll('[data-range]')) b.textContent = tr(b.dataset.range);
+$('confirm-no').textContent = tr('no');
+$('confirm-yes').textContent = tr('yes');
+
+const send = (m) => chrome.webview.postMessage(m);
+const fmtTime = new Intl.DateTimeFormat(LOCALE, { hour: '2-digit', minute: '2-digit' });
+const fmtDay = new Intl.DateTimeFormat(LOCALE, { weekday: 'long', day: 'numeric', month: 'long' });
+const fmtDayYear = new Intl.DateTimeFormat(LOCALE, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const nextDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+
+// ---- list ----
+let query = '', loaded = 0, more = false, waiting = false;
+const days = new Map(); // day start (ms) -> <ul>
+
+function dayLabel(start) {
+  const today = startOfDay(new Date()).getTime();
+  const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1);
+  const d = new Date(start);
+  const full = d.getFullYear() === new Date().getFullYear() ? fmtDay.format(d) : fmtDayYear.format(d);
+  if (start === today) return [tr('today'), full];
+  if (start === yesterday.getTime()) return [tr('yesterday'), full];
+  return [full, ''];
+}
+
+function daySection(start) {
+  if (days.has(start)) return days.get(start);
+  const sec = document.createElement('section');
+  sec.className = 'day';
+  const [name, full] = dayLabel(start);
+  const head = document.createElement('div');
+  head.className = 'day-head';
+  const h2 = document.createElement('h2');
+  h2.textContent = name;
+  if (full) { const s = document.createElement('span'); s.textContent = ' · ' + full; h2.append(s); }
+  const clear = document.createElement('button');
+  clear.type = 'button';
+  clear.className = 'day-clear';
+  clear.textContent = tr('dayClear');
+  clear.addEventListener('click', () => {
+    const d = new Date(start);
+    ask(tr('askDay').replace('{d}', full || name), { from: start / 1000, to: nextDay(d).getTime() / 1000 });
+  });
+  head.append(h2, clear);
+  const ul = document.createElement('ul');
+  sec.append(head, ul);
+  $('days').append(sec);
+  days.set(start, ul);
+  return ul;
+}
+
+function hostOf(u) { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } }
+
+function row(v) {
+  const li = document.createElement('li');
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'visit';
+  const ic = document.createElement('span');
+  ic.className = 'ic';
+  const globe = () => { ic.innerHTML = '<svg viewBox="0 0 16 16"><use href="#i-globe"/></svg>'; };
+  if (v.i) {
+    const img = document.createElement('img');
+    img.alt = '';
+    img.src = 'https://veyra.favicons/' + encodeURIComponent(v.i);
+    img.onerror = globe;
+    ic.append(img);
+  } else globe();
+  const t = document.createElement('span');
+  t.className = 't';
+  t.textContent = v.t || hostOf(v.u);
+  const h = document.createElement('span');
+  h.className = 'h';
+  h.textContent = hostOf(v.u);
+  const time = document.createElement('time');
+  const at = new Date(v.a * 1000);
+  time.dateTime = at.toISOString();
+  time.textContent = fmtTime.format(at);
+  const gap = document.createElement('span');
+  gap.className = 'gap';
+  open.append(ic, t, h, gap, time);
+  open.addEventListener('click', () => send({ type: 'open', u: v.u }));
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'del';
+  del.setAttribute('aria-label', tr('remove'));
+  del.innerHTML = '<svg viewBox="0 0 12 12"><use href="#i-x"/></svg>';
+  del.addEventListener('click', () => remove(li, v));
+  li.append(open, del);
+  return li;
+}
+
+function remove(li, v) {
+  const ul = li.parentElement;
+  const next = li.nextElementSibling || li.previousElementSibling;
+  send({ type: 'delete', items: [{ u: v.u, a: v.a }] });
+  li.remove();
+  loaded = Math.max(0, loaded - 1);
+  if (!ul.children.length) {
+    for (const [k, u] of days) if (u === ul) days.delete(k);
+    ul.parentElement.remove();
+  }
+  (next && next.querySelector('.visit') || $('q')).focus();
+  showEmpty();
+}
+
+function showEmpty() {
+  const none = !$('days').children.length && !more;
+  $('empty').hidden = !none;
+  if (none) {
+    $('empty-title').textContent = tr(query ? 'noneTitle' : 'emptyTitle');
+    $('empty-text').textContent = query ? tr('noneText').replace('{q}', query) : tr('emptyText');
+  }
+}
+
+function load(reset) {
+  if (reset) { loaded = 0; more = false; }
+  waiting = true;
+  send({ type: 'list', q: query, skip: loaded });
+}
+
+chrome.webview.addEventListener('message', (e) => {
+  const m = e.data;
+  if (m.type === 'changed') { if (m.reload !== false) refresh(); return; }
+  if (m.type !== 'list' || m.q !== query || m.skip !== loaded) return; // stale
+  waiting = false;
+  if (m.skip === 0) { $('days').replaceChildren(); days.clear(); $('list').scrollTop = 0; }
+  for (const v of m.items) daySection(startOfDay(new Date(v.a * 1000)).getTime()).append(row(v));
+  loaded += m.items.length;
+  more = m.more;
+  showEmpty();
+});
+
+// Single deletes are already off the list: only ranges reload it.
+let reloadOnChange = false;
+function refresh() { if (reloadOnChange) { reloadOnChange = false; load(true); } }
+
+new IntersectionObserver((es) => {
+  if (es.some((x) => x.isIntersecting) && more && !waiting) load(false);
+}, { root: $('list'), rootMargin: '400px' }).observe($('more'));
+
+let timer = 0;
+$('q').addEventListener('input', () => {
+  clearTimeout(timer);
+  timer = setTimeout(() => { query = $('q').value.trim(); load(true); }, 120);
+});
+
+// ---- bulk clear (asks first) ----
+let pending = null;
+function ask(text, range) {
+  pending = range;
+  $('confirm-text').textContent = text;
+  $('confirm').hidden = false;
+  $('confirm-no').focus();
+}
+function closeAsk() { pending = null; $('confirm').hidden = true; }
+$('confirm-no').addEventListener('click', () => { closeAsk(); $('q').focus(); });
+$('confirm-yes').addEventListener('click', () => {
+  if (!pending) return;
+  reloadOnChange = true;
+  send({ type: 'delete_range', ...pending });
+  closeAsk();
+  $('q').focus();
+});
+
+const dd = $('clear'), ddBtn = dd.querySelector('button');
+function setMenu(open) {
+  dd.classList.toggle('open', open);
+  ddBtn.setAttribute('aria-expanded', open);
+  if (open) dd.querySelector('[data-range]').focus();
+}
+ddBtn.addEventListener('click', () => setMenu(!dd.classList.contains('open')));
+document.addEventListener('click', (e) => { if (!dd.contains(e.target)) setMenu(false); });
+for (const b of dd.querySelectorAll('[data-range]')) {
+  b.addEventListener('click', () => {
+    setMenu(false);
+    const now = Date.now() / 1000;
+    if (b.dataset.range === 'hour') ask(tr('askHour'), { from: Math.floor(now - 3600) });
+    if (b.dataset.range === 'today') ask(tr('askToday'), { from: startOfDay(new Date()).getTime() / 1000 });
+    if (b.dataset.range === 'all') ask(tr('askAll'), { from: 0 });
+  });
+}
+dd.querySelector('.menu').addEventListener('keydown', (e) => {
+  const items = [...dd.querySelectorAll('[data-range]')];
+  const i = items.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+  if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+});
+
+// ---- keyboard: arrows move through the visits, Delete removes one ----
+document.addEventListener('keydown', (e) => {
+  const opens = [...document.querySelectorAll('.visit')];
+  const i = opens.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown' && (i >= 0 || document.activeElement === $('q'))) {
+    e.preventDefault(); (opens[i + 1] || opens[i] || $('q')).focus();
+  } else if (e.key === 'ArrowUp' && i >= 0) {
+    e.preventDefault(); (opens[i - 1] || $('q')).focus();
+  } else if (e.key === 'Delete' && i >= 0) {
+    e.preventDefault(); opens[i].parentElement.querySelector('.del').click();
+  }
+});
+$('close').addEventListener('click', () => send({ type: 'close' }));
+
+load(true);
+$('q').focus();
+</script>
+</body>
+</html>

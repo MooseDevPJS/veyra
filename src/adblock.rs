@@ -18,6 +18,8 @@ use base64::{Engine as _, prelude::BASE64_STANDARD};
 
 /// (file name, URL, trusted). Trusted lists may use scriptlets that need
 /// extra permissions (uBO's own lists, as in uBlock Origin itself).
+const BADWARE: &str = "ubo-badware.txt";
+
 const LISTS: &[(&str, &str, bool)] = &[
     ("easylist.txt", "https://easylist.to/easylist/easylist.txt", false),
     ("easyprivacy.txt", "https://easylist.to/easylist/easyprivacy.txt", false),
@@ -26,7 +28,8 @@ const LISTS: &[(&str, &str, bool)] = &[
     ("ubo-quick-fixes.txt", "https://ublockorigin.github.io/uAssets/filters/quick-fixes.txt", true),
     ("ubo-unbreak.txt", "https://ublockorigin.github.io/uAssets/filters/unbreak.txt", true),
     // Scam, malware and fake-download sites: what most redirect ads lead to.
-    ("ubo-badware.txt", "https://ublockorigin.github.io/uAssets/filters/badware.txt", true),
+    // Also the only list that stops a page the user opens (see `dangerous`).
+    (BADWARE, "https://ublockorigin.github.io/uAssets/filters/badware.txt", true),
     // Ad and tracking servers (also on by default in uBlock Origin).
     ("peter-lowe.txt", "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=adblockplus&showintro=0&mimetype=plaintext", false),
 ];
@@ -148,12 +151,16 @@ pub struct PageCosmetics {
 pub struct Lists {
     set: FilterSet,
     popup_set: FilterSet,
+    badware_set: FilterSet,
 }
 
 pub struct Blocker {
     engine: Engine,
     /// `$popup` rules only, checked when a page opens a window or tab.
     popups: Engine,
+    /// The badware list alone: dangerous pages, stopped even when the user
+    /// opens them (a link they clicked, an address they typed).
+    badware: Engine,
 }
 
 impl Blocker {
@@ -195,6 +202,7 @@ impl Blocker {
         let t = Instant::now();
         let mut set = FilterSet::new(false);
         let mut popup_set = FilterSet::new(false);
+        let mut badware_set = FilterSet::new(false);
         for (file, _, trusted) in LISTS {
             let Ok(text) = std::fs::read_to_string(dir.join(file)) else { continue };
             let opts = ParseOptions {
@@ -203,37 +211,54 @@ impl Blocker {
             };
             let mut p = Prepared::default();
             prepare(&text, &dir, file, &mut p, 0);
+            if *file == BADWARE {
+                badware_set.add_filter_list(p.main.clone(), opts);
+            }
             set.add_filter_list(std::mem::take(&mut p.main), opts);
             popup_set.add_filter_list(std::mem::take(&mut p.popups), ParseOptions::default());
         }
         eprintln!("adblock: lists parsed in {:?}", t.elapsed());
-        Lists { set, popup_set }
+        Lists { set, popup_set, badware_set }
     }
 
     /// Builds the engine from `read_lists`.
-    pub fn from_lists(Lists { set, popup_set }: Lists) -> Self {
+    pub fn from_lists(Lists { set, popup_set, badware_set }: Lists) -> Self {
         let t = Instant::now();
         let mut engine = Engine::new_with_filter_set(set);
         let popups = Engine::new_with_filter_set(popup_set);
+        let badware = Engine::new_with_filter_set(badware_set);
         let resources = load_resources();
         let count = resources.len();
         engine.use_resources(resources);
         eprintln!("adblock: engine ready in {:?} ({count} resources)", t.elapsed());
-        Blocker { engine, popups }
+        Blocker { engine, popups, badware }
     }
 
+    /// `badware`: rules of the dangerous-pages list (also in the main engine).
     #[cfg(test)]
-    fn from_rules(rules: &str) -> Self {
+    fn from_rules(rules: &str, badware: &str) -> Self {
         let mut p = Prepared::default();
         prepare(rules, Path::new("."), "test.txt", &mut p, 0);
         let mut set = FilterSet::new(false);
         set.add_filter_list(std::mem::take(&mut p.main), ParseOptions::default());
+        set.add_filter_list(badware.to_string(), ParseOptions::default());
         let mut popup_set = FilterSet::new(false);
         popup_set.add_filter_list(std::mem::take(&mut p.popups), ParseOptions::default());
-        Blocker { engine: Engine::new_with_filter_set(set), popups: Engine::new_with_filter_set(popup_set) }
+        let mut badware_set = FilterSet::new(false);
+        badware_set.add_filter_list(badware.to_string(), ParseOptions::default());
+        Blocker {
+            engine: Engine::new_with_filter_set(set),
+            popups: Engine::new_with_filter_set(popup_set),
+            badware: Engine::new_with_filter_set(badware_set),
+        }
     }
 
-    /// A page wants to open `url` in a new window/tab: block it?
+    /// A dangerous page (scam, malware): stopped even when the user opens it.
+    pub fn dangerous(&self, url: &str, source: &str) -> bool {
+        Self::blocks(&self.badware, url, source)
+    }
+
+    /// A page wants to open `url` in a new window/tab on its own: block it?
     pub fn popup_blocked(&self, url: &str, opener: &str) -> bool {
         Self::blocks(&self.popups, url, opener) || Self::blocks(&self.engine, url, opener)
     }
@@ -369,7 +394,7 @@ mod tests {
 
     #[test]
     fn blocks_and_excepts() {
-        let b = Blocker::from_rules("||ads.example^\n@@||ads.example/ok.js");
+        let b = Blocker::from_rules("||ads.example^\n@@||ads.example/ok.js", "");
         let page = "https://news.test/";
         assert!(matches!(b.check("https://ads.example/x.js", page, "script", "GET"), Verdict::Block));
         assert!(matches!(b.check("https://ads.example/ok.js", page, "script", "GET"), Verdict::Allow));
@@ -380,6 +405,7 @@ mod tests {
     fn popup_rules_and_conditions() {
         let b = Blocker::from_rules(
             "||popads.example^$popup,third-party\n||scam.example^$document\n!#if env_mobile\n||mobile.example^$popup\n!#endif",
+            "||malware.example^",
         );
         let page = "https://news.test/";
         assert!(b.popup_blocked("https://popads.example/x", page));
@@ -388,6 +414,10 @@ mod tests {
         assert!(b.navigation_blocked("https://scam.example/", ""));
         assert!(b.navigation_blocked("https://popads.example/x", page));
         assert!(!b.navigation_blocked("https://popads.example/x", ""));
+        // Only the badware list stops what the user opens.
+        assert!(b.dangerous("https://malware.example/", page));
+        assert!(!b.dangerous("https://popads.example/x", page));
+        assert!(!b.dangerous("https://scam.example/", page));
         // A popup rule must not block the same server's normal requests.
         assert!(matches!(b.check("https://popads.example/a.js", page, "script", "GET"), Verdict::Allow));
     }
@@ -401,7 +431,7 @@ mod tests {
 
     #[test]
     fn site_specific_css() {
-        let b = Blocker::from_rules("news.test##.promo\n##.banner-ad");
+        let b = Blocker::from_rules("news.test##.promo\n##.banner-ad", "");
         let c = b.page_cosmetics("https://news.test/a");
         assert!(c.css.contains(".promo{display:none!important}"));
         let generic = b.generic_css(&["banner-ad".into()], &[], &c.exceptions);

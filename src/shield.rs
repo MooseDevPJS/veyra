@@ -65,16 +65,30 @@ pub fn install(
                 let mut uri = PWSTR::null();
                 args.Uri(&mut uri)?;
                 let uri = CoTaskMemPWSTR::from(uri).to_string();
-                // Scam/malware pages, and pages sending the tab to an ad
-                // network (popunder redirects), never load.
+                // Dangerous pages (badware list) never load: a warning
+                // page says why. Other lists only stop what a page opens on
+                // its own (popunder redirects to ad networks): a link the
+                // user clicked, with its redirects, always opens.
                 if !s.paused.get() {
                     let mut p = PWSTR::null();
                     wv.Source(&mut p)?;
                     let source = CoTaskMemPWSTR::from(p).to_string();
-                    if b.navigation_blocked(&uri, &source) {
+                    let mut user = BOOL(0);
+                    args.IsUserInitiated(&mut user)?;
+                    let danger = b.dangerous(&uri, &source);
+                    if danger || (!user.as_bool() && b.navigation_blocked(&uri, &source)) {
                         args.SetCancel(true)?;
                         s.blocked.set(s.blocked.get() + 1);
                         eprintln!("adblock: navigation blocked {uri}");
+                        if danger {
+                            let page = format!(
+                                "https://{}/error.html?e=danger&l={}&u={}",
+                                crate::app::INTERNAL_HOST,
+                                crate::i18n::code(),
+                                crate::settings::url_encode(&uri)
+                            );
+                            wv.Navigate(&HSTRING::from(page))?;
+                        }
                         return Ok(());
                     }
                 }
@@ -84,8 +98,9 @@ pub fn install(
             &mut token_out,
         )?;
 
-        // Popups and new tabs opened by the page: ad networks are refused
-        // (the page gets `null` from window.open).
+        // Popups and new tabs a page opens on its own: ad networks are
+        // refused (the page gets `null` from window.open). What the user
+        // opens goes through (dangerous pages: the navigation check above).
         let (b, s) = (blocker.clone(), state.clone());
         webview.add_NewWindowRequested(
             &NewWindowRequestedEventHandler::create(Box::new(move |sender, args| {
@@ -96,6 +111,11 @@ pub fn install(
                 let mut p = PWSTR::null();
                 args.Uri(&mut p)?;
                 let uri = CoTaskMemPWSTR::from(p).to_string();
+                let mut user = BOOL(0);
+                args.IsUserInitiated(&mut user)?;
+                if user.as_bool() {
+                    return Ok(());
+                }
                 let mut p = PWSTR::null();
                 wv.Source(&mut p)?;
                 let source = CoTaskMemPWSTR::from(p).to_string();

@@ -185,6 +185,7 @@ impl App {
         let radius = if self.is_fullscreen() { 0.0 } else { PAGE_RADIUS * self.scale };
         self.comp.set_page_rect(self.page_rect(), radius);
         self.place_peek();
+        self.place_history();
         if let Some(d) = self.dock_rect() {
             self.place_dock(d);
         } else if self.dock.is_some() {
@@ -334,6 +335,10 @@ impl App {
             rect(r.left as f32 / s, r.top as f32 / s, r.right as f32 / s, r.bottom as f32 / s)
         });
         let peek_buttons = self.peek_buttons();
+        let history_card = self.history_rect().map(|r| {
+            let s = self.scale;
+            rect(r.left as f32 / s, r.top as f32 / s, r.right as f32 / s, r.bottom as f32 / s)
+        });
         let peek_hover = self.peek.as_ref().and_then(|p| p.hover);
         let prompt = self.prompt_rect().zip(self.current_prompt()).map(|(card, p)| (card, p.host.clone(), p.what, p.hover));
         let notice = self.notice.clone();
@@ -348,6 +353,7 @@ impl App {
             || self.ui.menu.is_some()
             || header.is_some()
             || peek_card.is_some()
+            || history_card.is_some()
             || prompt.is_some()
             || notice.is_some()
             || card.is_some();
@@ -362,6 +368,9 @@ impl App {
                     }
                     if let (Some(card), Some(buttons)) = (peek_card, peek_buttons) {
                         ui.draw_peek_chrome(dc, page, card, buttons, peek_hover);
+                    }
+                    if let Some(card) = history_card {
+                        ui.dim_around(dc, page, card);
                     }
                     if let Some((card, host, what, hover)) = &prompt {
                         ui.draw_prompt(dc, *card, host, what, *hover);
@@ -379,7 +388,7 @@ impl App {
                 self.comp.overlay.draw(device, 1, 1, scale, |_| {});
             }
         }
-        let blur = if self.peek.is_some() { 1.0 } else { bar_t };
+        let blur = if self.peek.is_some() || self.history_panel.is_some() { 1.0 } else { bar_t };
         self.comp.set_page_blur(14.0 * blur * self.scale);
         self.comp.commit();
     }
@@ -642,6 +651,11 @@ impl App {
         // Link preview open: it takes the mouse (outside clicks close it).
         if self.peek.is_some() && !self.resizing && !self.resizing_dock {
             self.peek_mouse(kind, x, y, keys, data);
+            return;
+        }
+        // History panel: the same.
+        if self.history_panel.is_some() && !self.resizing && !self.resizing_dock {
+            self.history_mouse(kind, x, y, keys, data);
             return;
         }
         // DevTools pane resize in progress.
@@ -1955,6 +1969,10 @@ impl App {
         }
         if self.peek.is_some() && vk == 0x1B {
             self.close_peek();
+            return true;
+        }
+        if self.history_panel.is_some() && vk == 0x1B {
+            self.close_history();
             return true;
         }
         if !self.ui.bar.open {

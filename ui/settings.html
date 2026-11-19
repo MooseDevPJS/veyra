@@ -72,7 +72,7 @@
   input[type=text]:hover, input[type=number]:hover { background: var(--tint2); }
   input[type=number] { width: 80px; text-align: right; }
   input[type=number]::-webkit-inner-spin-button { display: none; }
-  .unit { color: var(--fg3); margin-left: -8px; width: 26px; }
+  .unit { color: var(--fg3); margin-left: -8px; min-width: 26px; }
   input.wide { width: 100%; margin-top: 8px; }
   /* Switch */
   .switch { position: relative; width: 44px; height: 26px; flex: none; }
@@ -239,6 +239,12 @@
       <label>Compila automaticamente i moduli</label>
       <span class="switch"><input type="checkbox" data-key="autofill"><i></i></span>
     </div>
+    <div class="row">
+      <label>Conserva la cronologia per
+        <span class="help" tabindex="0">?<span>Le visite più vecchie vengono cancellate da sole. La cronologia si apre con Ctrl+H.</span></span>
+      </label>
+      <input type="number" min="1" max="3650" data-key="history_days"><span class="unit">giorni</span>
+    </div>
   </section>
 
   <h2><button type="button" class="fold" aria-expanded="false" aria-controls="dl-box">Download
@@ -305,7 +311,7 @@
 <script src="backgrounds.js"></script>
 <script>
 const NAMES = {
-  'new-tab': 'Nuova scheda', 'close-tab': 'Chiudi scheda', 'reopen-closed-tab': 'Riapri scheda chiusa',
+  'new-tab': 'Nuova scheda', 'close-tab': 'Chiudi scheda', 'reopen-closed-tab': 'Riapri scheda chiusa', 'history': 'Cronologia',
   'next-tab': 'Scheda successiva', 'prev-tab': 'Scheda precedente', 'tab1': 'Scheda 1', 'tab2': 'Scheda 2',
   'tab3': 'Scheda 3', 'tab4': 'Scheda 4', 'tab5': 'Scheda 5', 'tab6': 'Scheda 6', 'tab7': 'Scheda 7',
   'tab8': 'Scheda 8', 'last-tab': 'Ultima scheda', 'reload': 'Ricarica', 'hard-reload': 'Ricarica senza cache',
@@ -368,13 +374,15 @@ const EN = {
   'Proponi di salvare le password': 'Offer to save passwords',
   'Disattivalo se usi un gestore di password come Bitwarden.': 'Turn it off if you use a password manager like Bitwarden.',
   'Compila automaticamente i moduli': 'Autofill forms',
+  'Conserva la cronologia per': 'Keep history for', 'giorni': 'days',
+  'Le visite più vecchie vengono cancellate da sole. La cronologia si apre con Ctrl+H.': 'Older visits are deleted automatically. Open the history with Ctrl+H.',
   'Clicca una scorciatoia e premi i tasti nuovi. Canc la svuota, Esc annulla.': 'Click a shortcut and press the new keys. Delete clears it, Esc cancels.',
   'Cerca aggiornamenti': 'Check for updates', 'Versione': 'Version', 'Licenze': 'Licenses', 'Ripristina le impostazioni': 'Reset settings', 'Ripristina': 'Reset', 'Nessuna': 'None',
   'Veyra: MIT. Adblock: adblock-rust di Brave (MPL-2.0). Liste: EasyList ed EasyPrivacy (GPLv3 / CC BY-SA, The EasyList authors), filtri e scriptlet di uBlock Origin (GPLv3). Motore web: Microsoft WebView2.':
     "Veyra: MIT. Adblock: Brave's adblock-rust (MPL-2.0). Lists: EasyList and EasyPrivacy (GPLv3 / CC BY-SA, The EasyList authors), uBlock Origin filters and scriptlets (GPLv3). Web engine: Microsoft WebView2.",
 };
 const NAMES_EN = {
-  'new-tab': 'New tab', 'close-tab': 'Close tab', 'reopen-closed-tab': 'Reopen closed tab', 'next-tab': 'Next tab',
+  'new-tab': 'New tab', 'close-tab': 'Close tab', 'reopen-closed-tab': 'Reopen closed tab', 'history': 'History', 'next-tab': 'Next tab',
   'prev-tab': 'Previous tab', 'tab1': 'Tab 1', 'tab2': 'Tab 2', 'tab3': 'Tab 3', 'tab4': 'Tab 4', 'tab5': 'Tab 5',
   'tab6': 'Tab 6', 'tab7': 'Tab 7', 'tab8': 'Tab 8', 'last-tab': 'Last tab', 'reload': 'Reload',
   'hard-reload': 'Reload without cache', 'back': 'Back', 'forward': 'Forward', 'copy-url': 'Copy address',

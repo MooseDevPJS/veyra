@@ -82,6 +82,9 @@ pub enum Event {
     /// Alt+click on a link: preview it.
     Peek(String),
     PeekClose,
+    /// JSON message from the history panel (history.rs).
+    HistoryMsg(String),
+    HistoryClose,
     Permission(TabId, ICoreWebView2PermissionRequestedEventArgs, ICoreWebView2Deferral),
     /// A store page asked to install an extension: (id, from Edge Add-ons).
     InstallExtension(String, bool),
@@ -107,7 +110,7 @@ pub const INTERNAL_HOST: &str = "browser.settings";
 pub const SETTINGS_URL: &str = "https://browser.settings/settings.html";
 pub const NEWTAB_URL: &str = "https://browser.settings/newtab.html";
 
-fn ui_dir() -> PathBuf {
+pub(crate) fn ui_dir() -> PathBuf {
     let next_to_exe = sys::exe_dir().join("ui");
     if next_to_exe.exists() { next_to_exe } else { PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ui") }
 }
@@ -384,6 +387,8 @@ pub struct App {
     pub(crate) drag_data: Option<windows::Win32::System::Com::IDataObject>,
     /// Alt+click link preview.
     pub(crate) peek: Option<crate::peek::Peek>,
+    /// Ctrl+H panel (history.rs).
+    pub(crate) history_panel: Option<crate::history::HistoryPanel>,
     /// Site permission requests waiting for an answer.
     pub(crate) prompts: Vec<crate::permission::Prompt>,
     /// Short message shown over the page (extensions install result...).
@@ -464,6 +469,7 @@ impl App {
             drag_over: crate::drop::Over::Nothing,
             drag_data: None,
             peek: None,
+            history_panel: None,
             prompts: Vec::new(),
             notice: None,
             exts: Vec::new(),
@@ -876,6 +882,7 @@ impl App {
         if self.session_dirty {
             self.save_session();
         }
+        self.store.borrow_mut().prune(self.settings.history_days, store::now());
         self.store.borrow_mut().save();
         self.check_dock();
         self.expire_incoming();
@@ -893,6 +900,9 @@ impl App {
             Event::Created(crate::peek::PEEK_ID, c) => self.peek_created(c),
             Event::Peek(url) => self.open_peek(url),
             Event::PeekClose => self.close_peek(),
+            Event::Created(crate::history::HISTORY_ID, c) => self.history_created(c),
+            Event::HistoryMsg(json) => self.history_message(&json),
+            Event::HistoryClose => self.close_history(),
             Event::Permission(id, args, deferral) => self.permission_requested(id, args, deferral),
             Event::InstallExtension(id, edge) => self.install_extension(id, edge),
             Event::Notice(text) => self.notify(&text),
@@ -1048,6 +1058,7 @@ impl App {
             FocusAddress | CommandBar => self.open_bar(false),
             Bookmark => self.toggle_bookmark(),
             Settings => self.open_settings(),
+            History => self.toggle_history(),
             ToggleSidebar => self.toggle_sidebar(),
             CloseTab => {
                 if let Some(i) = active {

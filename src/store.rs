@@ -1,5 +1,10 @@
 //! History and bookmarks, kept in memory and saved as JSON. Small enough
 //! (capped) that loading, searching and saving stay in the milliseconds.
+//!
+//! Two kinds of history: `history` has one row per page (visit count, for
+//! the address-field suggestions); `log` has every single visit with its
+//! time (the history panel). The log is appended to `visits.jsonl` as it
+//! grows and rewritten only after a deletion or a cleanup.
 
 use std::path::{Path, PathBuf};
 
@@ -16,6 +21,18 @@ pub struct Visit {
     pub last: u64,
 }
 
+/// One visit of the history panel.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Entry {
+    #[serde(rename = "u")]
+    pub url: String,
+    #[serde(rename = "t", default)]
+    pub title: String,
+    /// Unix seconds.
+    #[serde(rename = "a")]
+    pub at: u64,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Bookmark {
     pub url: String,
@@ -27,6 +44,14 @@ pub struct Store {
     dir: PathBuf,
     pub history: Vec<Visit>,
     pub bookmarks: Vec<Bookmark>,
+    /// Every visit, oldest first.
+    pub log: Vec<Entry>,
+    /// `log[logged..]` is not in `visits.jsonl` yet.
+    logged: usize,
+    /// The whole log must be rewritten (something was deleted).
+    rewrite: bool,
+    /// Last `prune`: (time, days).
+    pruned: (u64, u32),
     dirty: bool,
 }
 
@@ -52,8 +77,22 @@ impl Store {
             dir: dir.to_path_buf(),
             history: read("history.json").and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default(),
             bookmarks: read("bookmarks.json").and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default(),
+            log: Vec::new(),
+            logged: 0,
+            rewrite: false,
+            pruned: (0, 0),
             dirty: false,
         }
+        .with_log(read("visits.jsonl").unwrap_or_default())
+    }
+
+    /// Visits from `visits.jsonl` (one JSON object per line; a broken line,
+    /// say from a crash while writing, is skipped).
+    fn with_log(mut self, text: String) -> Self {
+        self.log = text.lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+        self.log.sort_by_key(|e| e.at);
+        self.logged = self.log.len();
+        self
     }
 
     pub fn save(&mut self) {
@@ -73,12 +112,49 @@ impl Store {
             }
         }
         self.dirty = false;
+        self.save_log();
+    }
+
+    fn save_log(&mut self) {
+        if self.dir.as_os_str().is_empty() || (!self.rewrite && self.logged == self.log.len()) {
+            return;
+        }
+        // Titles arrive after the visit: fill them in before writing.
+        for e in &mut self.log[if self.rewrite { 0 } else { self.logged }..] {
+            if e.title.is_empty()
+                && let Some(v) = self.history.iter().find(|v| v.url == e.url)
+            {
+                e.title = v.title.clone();
+            }
+        }
+        let lines = |entries: &[Entry]| -> String {
+            entries.iter().filter_map(|e| serde_json::to_string(e).ok()).map(|l| l + "\n").collect()
+        };
+        let path = self.dir.join("visits.jsonl");
+        let ok = if self.rewrite {
+            let tmp = path.with_extension("tmp");
+            std::fs::write(&tmp, lines(&self.log)).is_ok() && std::fs::rename(&tmp, &path).is_ok()
+        } else {
+            use std::io::Write;
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .and_then(|mut f| f.write_all(lines(&self.log[self.logged..]).as_bytes()))
+                .is_ok()
+        };
+        if ok {
+            self.logged = self.log.len();
+            self.rewrite = false;
+        }
     }
 
     pub fn record_visit(&mut self, url: &str, at: u64) {
         if !url.starts_with("http") {
             return;
         }
+        let title = self.history.iter().find(|v| v.url == url).map(|v| v.title.clone()).unwrap_or_default();
+        self.log.push(Entry { url: url.into(), title, at });
         match self.history.iter_mut().find(|v| v.url == url) {
             Some(v) => {
                 v.visits += 1;
@@ -99,6 +175,83 @@ impl Store {
             && v.title != title
         {
             v.title = title.into();
+            self.dirty = true;
+        }
+        // The latest visit of this page, if not written yet.
+        let logged = self.logged;
+        if let Some(e) = self.log.iter_mut().skip(logged).rev().find(|e| e.url == url) {
+            e.title = title.into();
+        }
+    }
+
+    /// Visits for the history panel, newest first, whose title or address
+    /// contains every word of `query`: `limit` of them after the first `skip`.
+    pub fn visits(&self, query: &str, skip: usize, limit: usize) -> Vec<&Entry> {
+        let q = query.trim().to_lowercase();
+        let words: Vec<&str> = q.split_whitespace().collect();
+        self.log
+            .iter()
+            .rev()
+            .filter(|e| {
+                words.is_empty() || {
+                    let hay = format!("{} {}", e.title.to_lowercase(), strip_scheme(&e.url).to_lowercase());
+                    words.iter().all(|w| hay.contains(w))
+                }
+            })
+            .skip(skip)
+            .take(limit)
+            .collect()
+    }
+
+    /// Deletes the visits matching `gone`; a page left with no visit also
+    /// leaves the address-field suggestions.
+    fn delete_where(&mut self, gone: impl Fn(&Entry) -> bool) {
+        let before = self.log.len();
+        let mut touched: Vec<String> = Vec::new();
+        self.log.retain(|e| {
+            let g = gone(e);
+            if g && !touched.contains(&e.url) {
+                touched.push(e.url.clone());
+            }
+            !g
+        });
+        if self.log.len() == before {
+            return;
+        }
+        let log = &self.log;
+        self.history.retain(|v| !touched.contains(&v.url) || log.iter().any(|e| e.url == v.url));
+        self.logged = self.logged.min(self.log.len());
+        self.rewrite = true;
+        self.dirty = true;
+    }
+
+    /// Single visits (address and time), from the panel.
+    pub fn delete_visits(&mut self, visits: &[(String, u64)]) {
+        self.delete_where(|e| visits.iter().any(|(u, a)| *u == e.url && *a == e.at));
+    }
+
+    /// Visits in [from, to) (Unix seconds): a day, the last hour, everything.
+    pub fn delete_range(&mut self, from: u64, to: u64) {
+        self.delete_where(|e| e.at >= from && e.at < to);
+        if from == 0 && to == u64::MAX && !self.history.is_empty() {
+            self.history.clear();
+            self.dirty = true;
+        }
+    }
+
+    /// Keeps `days` of history (0 = keep everything): older visits go, and
+    /// pages not visited since then leave the suggestions too. At most once
+    /// an hour unless `days` changed (it runs on the housekeeping timer).
+    pub fn prune(&mut self, days: u32, at: u64) {
+        if days == 0 || (self.pruned.1 == days && at < self.pruned.0 + 3600) {
+            return;
+        }
+        self.pruned = (at, days);
+        let cutoff = at.saturating_sub(days as u64 * 86_400);
+        self.delete_where(|e| e.at < cutoff);
+        let before = self.history.len();
+        self.history.retain(|v| v.last >= cutoff);
+        if self.history.len() != before {
             self.dirty = true;
         }
     }
@@ -190,6 +343,42 @@ mod tests {
             s.record_visit("https://news.test/youth", 1000);
         }
         s
+    }
+
+    #[test]
+    fn visit_log_search_and_delete() {
+        let mut s = Store::default();
+        s.record_visit("https://a.test/", 100);
+        s.set_title("https://a.test/", "Alpha");
+        s.record_visit("https://b.test/", 200);
+        s.record_visit("https://a.test/", 300);
+        // Newest first, every visit, titles from the page.
+        let all: Vec<(u64, &str)> = s.visits("", 0, 10).iter().map(|e| (e.at, e.title.as_str())).collect();
+        assert_eq!(all, vec![(300, "Alpha"), (200, ""), (100, "Alpha")]);
+        assert_eq!(s.visits("alpha", 0, 10).len(), 2);
+        assert_eq!(s.visits("", 1, 10).len(), 2);
+        // One visit of a: the page stays a suggestion; b's only visit: it goes.
+        s.delete_visits(&[("https://a.test/".into(), 300), ("https://b.test/".into(), 200)]);
+        assert_eq!(s.log.len(), 1);
+        assert!(s.history.iter().any(|v| v.url == "https://a.test/"));
+        assert!(!s.history.iter().any(|v| v.url == "https://b.test/"));
+        // A day; everything.
+        s.record_visit("https://c.test/", 90_000);
+        s.delete_range(86_400, 172_800);
+        assert_eq!(s.log.len(), 1);
+        s.delete_range(0, u64::MAX);
+        assert!(s.log.is_empty() && s.history.is_empty());
+    }
+
+    #[test]
+    fn prune_keeps_the_last_days() {
+        let mut s = Store::default();
+        let day = 86_400;
+        s.record_visit("https://old.test/", day);
+        s.record_visit("https://new.test/", 150 * day);
+        s.prune(100, 160 * day);
+        assert_eq!(s.log.iter().map(|e| e.url.as_str()).collect::<Vec<_>>(), vec!["https://new.test/"]);
+        assert_eq!(s.history.len(), 1);
     }
 
     #[test]

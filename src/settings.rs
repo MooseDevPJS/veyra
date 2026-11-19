@@ -62,6 +62,8 @@ pub struct Settings {
     pub save_passwords: bool,
     /// Autofill of addresses and other form data.
     pub autofill: bool,
+    /// Days of history kept (history panel, Ctrl+H).
+    pub history_days: u32,
     /// Chromium's low-end device mode: ~7% less RAM, slightly less smooth.
     /// On by default on PCs with less than 8 GB.
     pub low_end_mode: bool,
@@ -104,6 +106,7 @@ impl Default for Settings {
             tracking_prevention: "balanced".into(),
             save_passwords: false,
             autofill: true,
+            history_days: 100,
             low_end_mode: low_end,
             browser_flags: String::new(),
             shortcuts: Bindings::default(),
@@ -116,6 +119,7 @@ impl Settings {
     pub fn sanitize(&mut self) {
         self.sidebar_width = self.sidebar_width.clamp(200.0, 420.0);
         self.devtools_width = self.devtools_width.clamp(280.0, 1400.0);
+        self.history_days = self.history_days.clamp(1, 3650);
         if !self.search_url.contains("{}") || !self.search_url.starts_with("http") {
             self.search_url = Settings::default().search_url;
         }

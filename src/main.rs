@@ -24,6 +24,7 @@ mod newtab;
 mod peek;
 mod placement;
 mod permission;
+mod history;
 mod i18n;
 mod settings;
 mod shell;

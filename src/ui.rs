@@ -1113,13 +1113,11 @@ impl Ui {
         }
     }
 
-    /// Around the preview card: dim the rest and draw the two buttons.
-    pub fn draw_peek_chrome(&self, dc: &ID2D1DeviceContext, page: D2D_RECT_F, card: D2D_RECT_F, buttons: (D2D_RECT_F, D2D_RECT_F), hover: Option<crate::peek::PeekButton>) {
-        use crate::peek::PeekButton;
-        let th = self.theme;
+    /// Dims the page around a card (link preview, history panel); the card
+    /// itself stays undimmed.
+    pub fn dim_around(&self, dc: &ID2D1DeviceContext, page: D2D_RECT_F, card: D2D_RECT_F) {
         unsafe {
-            if let Ok(dim) = dc.CreateSolidColorBrush(&rgba(0x000000, if th.dark { 0.32 } else { 0.18 }), None) {
-                // Four bands around the card (the card itself stays undimmed).
+            if let Ok(dim) = dc.CreateSolidColorBrush(&rgba(0x000000, if self.theme.dark { 0.32 } else { 0.18 }), None) {
                 for band in [
                     rect(page.left, page.top, page.right, card.top),
                     rect(page.left, card.bottom, page.right, page.bottom),
@@ -1129,6 +1127,15 @@ impl Ui {
                     dc.FillRectangle(&band, &dim);
                 }
             }
+        }
+    }
+
+    /// Around the preview card: dim the rest and draw the two buttons.
+    pub fn draw_peek_chrome(&self, dc: &ID2D1DeviceContext, page: D2D_RECT_F, card: D2D_RECT_F, buttons: (D2D_RECT_F, D2D_RECT_F), hover: Option<crate::peek::PeekButton>) {
+        use crate::peek::PeekButton;
+        let th = self.theme;
+        self.dim_around(dc, page, card);
+        unsafe {
             let (open, close) = buttons;
             if let (Ok(bg), Ok(bgh), Ok(fg)) = (
                 dc.CreateSolidColorBrush(&rgba(th.panel(), 0.96), None),

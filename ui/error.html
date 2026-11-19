@@ -46,6 +46,10 @@ const en = (q.get('l') || navigator.language).toLowerCase().slice(0, 2) !== 'it'
 const T = {
   title: ['Impossibile aprire la pagina', "Can't open this page"],
   retry: ['Riprova', 'Try again'],
+  dangerTitle: ['Pagina bloccata', 'Page blocked'],
+  danger: ['Questo sito è nella lista dei siti pericolosi (truffe, malware, falsi download). Veyra lo ha fermato per proteggerti.',
+           'This site is on the list of dangerous sites (scams, malware, fake downloads). Veyra stopped it to protect you.'],
+  back: ['Torna indietro', 'Go back'],
   offline: ['Sembra che tu non sia connesso a internet.', "You don't seem to be connected to the internet."],
   dns: ['Questo indirizzo non esiste o il sito non risponde.', "This address doesn't exist or the site isn't answering."],
   timeout: ['Il sito ci sta mettendo troppo a rispondere.', 'The site is taking too long to answer.'],
@@ -55,13 +59,20 @@ const T = {
 };
 const tr = (k) => T[k][en ? 1 : 0];
 document.documentElement.lang = en ? 'en' : 'it';
-document.title = tr('title');
-document.getElementById('title').textContent = tr('title');
+const danger = kind === 'danger';
+document.title = tr(danger ? 'dangerTitle' : 'title');
+document.getElementById('title').textContent = document.title;
 document.getElementById('why').textContent = tr(T[kind] ? kind : 'generic');
 document.getElementById('addr').textContent = url;
 const retry = document.getElementById('retry');
-retry.textContent = tr('retry');
-retry.addEventListener('click', () => { if (/^https?:/i.test(url)) location.replace(url); });
+// A dangerous page would only be stopped again: go back instead (hidden
+// in a tab that has nowhere to go back to).
+retry.textContent = tr(danger ? 'back' : 'retry');
+retry.hidden = danger && history.length < 2;
+retry.addEventListener('click', () => {
+  if (danger) history.back();
+  else if (/^https?:/i.test(url)) location.replace(url);
+});
 </script>
 </body>
 </html>
