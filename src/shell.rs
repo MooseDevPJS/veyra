@@ -903,6 +903,35 @@ impl App {
         };
         let p = self.page_rect();
         self.forward_to(&cc, p, kind, x, y, keys, data);
+        if kind == Mouse::Move {
+            self.probe_hidden_cursor(x - p.left, y - p.top);
+        }
+    }
+
+    /// WebView2 workaround: once a page hid the pointer (`cursor: none`, a
+    /// video's controls fading out), the runtime often does not report it
+    /// coming back (no CursorChanged, or a NULL cursor), so it stayed hidden.
+    /// While it is hidden, moving asks the page (at most every 150 ms) what
+    /// cursor is under the pointer. `x`, `y`: px in the page.
+    fn probe_hidden_cursor(&mut self, x: i32, y: i32) {
+        if !crate::app::page_cursor_hidden(self.hwnd) || self.cursor_probe.is_some_and(|t| t.elapsed().as_millis() < 150) {
+            return;
+        }
+        let Some(tab) = self.active_index().map(|i| &self.tabs[i]) else { return };
+        let Some(webview) = tab.view.as_ref().map(|v| v.webview.clone()) else { return };
+        let owner = crate::app::Owner(tab.id);
+        self.cursor_probe = Some(Instant::now());
+        let js = format!("(()=>{{const r=devicePixelRatio,e=document.elementFromPoint({x}/r,{y}/r);return e?getComputedStyle(e).cursor:''}})()");
+        let done = webview2_com::ExecuteScriptCompletedHandler::create(Box::new(move |_, result: String| {
+            let css: String = serde_json::from_str(&result).unwrap_or_default();
+            if let Some(h) = crate::app::css_cursor(&css) {
+                crate::app::page_cursor_unhidden(owner, h);
+            }
+            Ok(())
+        }));
+        unsafe {
+            let _ = webview.ExecuteScript(&windows::core::HSTRING::from(js), &done);
+        }
     }
 
     /// Sends a mouse event to a WebView shown at `p` (client px).

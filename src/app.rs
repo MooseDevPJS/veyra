@@ -167,24 +167,50 @@ fn set_tab_owner(id: TabId, hwnd: Option<HWND>) {
     });
 }
 
+/// Posted when the page's cursor changed: the window shows it at once if the
+/// pointer is over the page (main.rs), not over the sidebar or the edges.
+pub const WM_PAGE_CURSOR: u32 = WM_APP + 13;
+
 /// The page changed its cursor (a link hand, a video hiding it...). Shown at
-/// once when the pointer is over our window: waiting for the next
-/// WM_SETCURSOR left it hidden after a video brought it back.
+/// once: waiting for the next WM_SETCURSOR left it hidden after a video
+/// brought it back.
 pub(crate) fn page_cursor_changed(to: impl PostTarget, h: HCURSOR) {
     let Some(hwnd) = to.target().window() else { return };
     PAGE_CURSOR.with(|p| p.borrow_mut().insert(hwnd.0 as isize, h));
     unsafe {
-        let mut pt = windows::Win32::Foundation::POINT::default();
-        if windows::Win32::UI::WindowsAndMessaging::GetCursorPos(&mut pt).is_ok()
-            && windows::Win32::UI::WindowsAndMessaging::GetAncestor(
-                windows::Win32::UI::WindowsAndMessaging::WindowFromPoint(pt),
-                windows::Win32::UI::WindowsAndMessaging::GA_ROOT,
-            ) == hwnd
-            && windows::Win32::UI::Input::KeyboardAndMouse::GetCapture().0.is_null()
-        {
-            windows::Win32::UI::WindowsAndMessaging::SetCursor(Some(h));
-        }
+        let _ = PostMessageW(Some(hwnd), WM_PAGE_CURSOR, WPARAM(0), LPARAM(0));
     }
+}
+
+/// The page hid the pointer (`cursor: none`) and it is still hidden.
+pub(crate) fn page_cursor_hidden(hwnd: HWND) -> bool {
+    PAGE_CURSOR.with(|p| p.borrow().get(&(hwnd.0 as isize)).is_some_and(|h| h.0.is_null()))
+}
+
+/// The page shows the pointer again (shell.rs, `probe_hidden_cursor`):
+/// taken only if nothing changed it meanwhile.
+pub(crate) fn page_cursor_unhidden(to: impl PostTarget, h: HCURSOR) {
+    if to.target().window().is_some_and(page_cursor_hidden) {
+        page_cursor_changed(to, h);
+    }
+}
+
+/// Windows cursor for a CSS `cursor` value (None: hidden).
+pub(crate) fn css_cursor(css: &str) -> Option<HCURSOR> {
+    use windows::Win32::UI::WindowsAndMessaging::*;
+    let id = match css {
+        "" | "none" => return None,
+        "pointer" => IDC_HAND,
+        "text" | "vertical-text" => IDC_IBEAM,
+        "wait" => IDC_WAIT,
+        "progress" => IDC_APPSTARTING,
+        "crosshair" => IDC_CROSS,
+        "not-allowed" | "no-drop" => IDC_NO,
+        "move" | "all-scroll" => IDC_SIZEALL,
+        "help" => IDC_HELP,
+        _ => IDC_ARROW,
+    };
+    unsafe { LoadCursorW(None, id).ok() }
 }
 
 /// Our error page stands for the address that failed to load.
@@ -340,6 +366,8 @@ pub struct App {
     pub(crate) resizing: bool,
     /// A mouse button went down in the page: keep sending it events.
     pub(crate) page_capture: bool,
+    /// Last time the page was asked for the cursor under the pointer (shell.rs).
+    pub(crate) cursor_probe: Option<Instant>,
     pub(crate) mouse_in_page: bool,
     /// What the frame layer currently holds (solid?, w, h, dark).
     pub(crate) frame_drawn: (bool, u32, u32, bool),
@@ -424,6 +452,7 @@ impl App {
             follow_last: None,
             resizing: false,
             page_capture: false,
+            cursor_probe: None,
             mouse_in_page: false,
             frame_drawn: (false, 0, 0, false),
             groups: Vec::new(),

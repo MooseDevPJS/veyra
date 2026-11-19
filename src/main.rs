@@ -54,7 +54,7 @@ use windows::{
         UI::{
             Controls::MARGINS,
             HiDpi::*,
-            Input::KeyboardAndMouse::{TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT, TrackMouseEvent},
+            Input::KeyboardAndMouse::{GetCapture, TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT, TrackMouseEvent},
             WindowsAndMessaging::*,
         },
     },
@@ -745,6 +745,22 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LR
                     unsafe {
                         let _ = PostMessageW(Some(w), WM_CLOSE, WPARAM(0), LPARAM(0));
                     }
+                }
+            }
+            LRESULT(0)
+        }
+        // The page's cursor changed: shown now if the pointer is on the page
+        // (cursor_at decides, as for WM_SETCURSOR; a button held keeps it).
+        app::WM_PAGE_CURSOR => {
+            unsafe {
+                let mut pt = POINT::default();
+                if GetCapture().0.is_null()
+                    && GetCursorPos(&mut pt).is_ok()
+                    && GetAncestor(WindowFromPoint(pt), GA_ROOT) == hwnd
+                    && ScreenToClient(hwnd, &mut pt).as_bool()
+                    && let Some(c) = with_window(hwnd, |a| a.cursor_at(pt.x, pt.y)).flatten()
+                {
+                    SetCursor(Some(c));
                 }
             }
             LRESULT(0)
