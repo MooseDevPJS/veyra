@@ -134,6 +134,9 @@ impl App {
     /// After any change: when the set of pinned tabs (or their order) is not
     /// what the other windows have, save it and tell them.
     pub fn sync_pins(&mut self) {
+        if self.private {
+            return;
+        }
         for t in &mut self.tabs {
             if t.pinned && t.pin == 0 {
                 t.pin = new_pin_id();
@@ -157,6 +160,9 @@ impl App {
     /// Keeps addresses and titles of the pinned tabs up to date on disk,
     /// unless another window changed the set meanwhile (its list wins).
     pub(crate) fn save_pin_details(&self) {
+        if self.private {
+            return;
+        }
         let ours = self.pins();
         let on_disk: Vec<u64> = load_pins(&self.data_dir).unwrap_or_default().iter().map(|p| p.id).collect();
         if on_disk.is_empty() && ours.is_empty() {
@@ -170,6 +176,9 @@ impl App {
     /// Another window changed the pinned tabs: same set and order here.
     /// Each window keeps its own page in them.
     pub fn reload_pins(&mut self) {
+        if self.private {
+            return;
+        }
         let Some(pins) = load_pins(&self.data_dir) else { return };
         let ids: Vec<u64> = pins.iter().map(|p| p.id).collect();
         let gone: Vec<TabId> = self.tabs.iter().filter(|t| t.pinned && !ids.contains(&t.pin)).map(|t| t.id).collect();
@@ -263,7 +272,7 @@ impl App {
             return;
         }
         self.follow_last = Some((pt.x, pt.y));
-        let target = crate::shell::browser_window_under(pt, self.hwnd);
+        let target = crate::shell::browser_window_under(pt, self.hwnd, self.private);
         if target != self.follow_target {
             if let Some(old) = self.follow_target {
                 send(old, self.hwnd, TAB_HOVER_END, "", 100);
@@ -293,7 +302,7 @@ impl App {
     /// it was dropped on, if any; otherwise this window stays there.
     pub fn follow_dropped(&mut self, pt: POINT) {
         self.follow_last = None;
-        let target = crate::shell::browser_window_under(pt, self.hwnd);
+        let target = crate::shell::browser_window_under(pt, self.hwnd, self.private);
         if let (Some(t), Some((id, ..))) = (target, self.carried())
             && let Some(Some(at)) = crate::with_window(t, |a| a.drop_point(pt))
             && let Some(tab) = self.take_tab(id)
@@ -331,7 +340,12 @@ impl App {
     /// This window closes while others stay: its tabs go to another
     /// window's "reopen closed tab" list.
     pub(crate) fn hand_over_closed(&self) {
-        let Some(&w) = other_windows(self.hwnd).first() else { return };
+        // A private window's tabs are forgotten; a normal one's go to
+        // another normal window.
+        if self.private {
+            return;
+        }
+        let Some(w) = other_windows(self.hwnd).into_iter().find(|w| crate::with_window(*w, |a| !a.private).unwrap_or(false)) else { return };
         let tabs: Vec<(String, String)> = self
             .tabs
             .iter()

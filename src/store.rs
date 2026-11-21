@@ -64,6 +64,8 @@ pub enum Suggestion {
     History { title: String, url: String },
     /// Go to what was typed (looks like an address) or search for it.
     Go { input: String, is_search: bool },
+    /// A Veyra command (shell.rs `COMMANDS`): "privata" opens a private window.
+    Command(crate::shortcuts::Action),
 }
 
 pub fn now() -> u64 {

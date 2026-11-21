@@ -358,6 +358,10 @@ pub struct App {
     /// Pinned tabs came from `pins.json` (not from the session).
     pub(crate) pins_loaded: bool,
     /// Preview row of a tab another window is bringing (multi.rs, `tab_hover`).
+    /// Private window: its tabs are InPrivate WebViews (cookies, cache and
+    /// logins live in memory only) and nothing of it is written to disk:
+    /// history, session, site icons, pinned tabs, downloads list.
+    pub(crate) private: bool,
     pub(crate) incoming: Option<TabId>,
     pub(crate) incoming_at: Instant,
     /// Torn off and following the pointer: the window under it, whether
@@ -471,6 +475,7 @@ impl App {
             drag_data: None,
             peek: None,
             history_panel: None,
+            private: false,
             prompts: Vec::new(),
             notice: None,
             exts: Vec::new(),
@@ -661,7 +666,7 @@ impl App {
     }
 
     pub(crate) fn create_view(&mut self, id: TabId) {
-        let (hwnd, owner) = (self.hwnd, Owner(id));
+        let owner = Owner(id);
         if let Some(tab) = self.tab_mut(id) {
             tab.state = TabState::Loading;
             tab.timing = Some(Instant::now());
@@ -676,16 +681,37 @@ impl App {
             }
             Ok(())
         }));
-        unsafe {
-            let created = self
-                .env
-                .cast::<ICoreWebView2Environment3>()
-                .and_then(|env3| env3.CreateCoreWebView2CompositionController(hwnd, &handler));
+        {
+            let created = self.new_controller(&handler);
             if let Err(e) = created {
                 eprintln!("tab {id}: CreateCoreWebView2CompositionController: {e}");
                 if let Some(tab) = self.tab_mut(id) {
                     tab.state = TabState::Unloaded;
                 }
+            }
+        }
+    }
+
+    /// A new WebView for this window: InPrivate in a private window.
+    pub(crate) fn new_controller(&self, handler: &ICoreWebView2CreateCoreWebView2CompositionControllerCompletedHandler) -> Result<()> {
+        unsafe {
+            if self.private {
+                let env10: ICoreWebView2Environment10 = self.env.cast()?;
+                let options = env10.CreateCoreWebView2ControllerOptions()?;
+                options.SetIsInPrivateModeEnabled(true)?;
+                env10.CreateCoreWebView2CompositionControllerWithOptions(self.hwnd, &options, handler)
+            } else {
+                self.env.cast::<ICoreWebView2Environment3>()?.CreateCoreWebView2CompositionController(self.hwnd, handler)
+            }
+        }
+    }
+
+    /// Ctrl+Shift+N: a new private window.
+    pub fn open_private_window(&mut self) {
+        let opts = crate::WindowOpts { at: None, size: None, content: crate::Content::Urls(Vec::new()), follow: None, private: true };
+        if let Ok(w) = crate::open_window(opts) {
+            unsafe {
+                let _ = windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(w);
             }
         }
     }
@@ -954,7 +980,9 @@ impl App {
                 if let Some(t) = self.tab_mut(id) {
                     t.title = title;
                 }
-                if let Some(t) = self.tabs.iter().find(|t| t.id == id) {
+                if let Some(t) = self.tabs.iter().find(|t| t.id == id)
+                    && !self.private
+                {
                     self.store.borrow_mut().set_title(&t.url, &t.title);
                 }
                 self.session_dirty = true;
@@ -967,7 +995,7 @@ impl App {
                     return self.close(id);
                 }
                 let url = error_page_target(&url).unwrap_or(url);
-                if !url.starts_with(&format!("https://{INTERNAL_HOST}/")) {
+                if !self.private && !url.starts_with(&format!("https://{INTERNAL_HOST}/")) {
                     self.store.borrow_mut().record_visit(&url, store::now());
                 }
                 if let Some(t) = self.tab_mut(id) {
@@ -985,7 +1013,9 @@ impl App {
                     return; // Veyra's own pages keep the Veyra logo (shell.rs)
                 }
                 if let Some(pair) = self.ui.gfx.decode_icon(&png) {
-                    let _ = std::fs::write(self.favicon_path(&host), &png);
+                    if !self.private {
+                        let _ = std::fs::write(self.favicon_path(&host), &png);
+                    }
                     self.icons.insert(host, pair);
                     self.ui.icons_changed();
                     self.redraw();
@@ -1060,6 +1090,7 @@ impl App {
             Bookmark => self.toggle_bookmark(),
             Settings => self.open_settings(),
             History => self.toggle_history(),
+            PrivateWindow => self.open_private_window(),
             ToggleSidebar => self.toggle_sidebar(),
             CloseTab => {
                 if let Some(i) = active {
@@ -1114,7 +1145,8 @@ impl App {
                 }
             }
             PinTab => {
-                if let Some(i) = active {
+                // Pinned tabs are shared with every window: not from a private one.
+                if let Some(i) = active.filter(|_| !self.private) {
                     self.tabs[i].pinned = !self.tabs[i].pinned;
                     self.session_dirty = true;
                     self.redraw();
@@ -1293,9 +1325,10 @@ impl App {
 
     /// Theme and backdrop from settings + Windows (dark mode, transparency).
     pub fn apply_theme(&mut self) {
-        let dark = self.settings.dark(crate::system_dark_mode());
+        // A private window is always dark, tinted night blue (ui.rs).
+        let dark = self.private || self.settings.dark(crate::system_dark_mode());
         let glass = self.settings.glass && crate::system_transparency() && !self.comp.software;
-        self.ui.theme = crate::ui::Theme { dark, glass };
+        self.ui.theme = crate::ui::Theme { dark, glass, private: self.private };
         crate::apply_backdrop(self.hwnd, self.ui.theme);
     }
 
@@ -1406,6 +1439,10 @@ impl App {
     /// Every window saves its tabs (the last one closed is what opens next
     /// time); the pinned ones go to `pins.json`.
     pub fn save_session(&mut self) {
+        if self.private {
+            self.session_dirty = false;
+            return;
+        }
         let normal: Vec<&Tab> = self
             .tabs
             .iter()
@@ -1433,7 +1470,9 @@ impl App {
     pub fn shutdown(&mut self) {
         self.end_incoming();
         self.hand_over_closed();
-        crate::placement::save(self.hwnd, &self.data_dir, self.fullscreen);
+        if !self.private {
+            crate::placement::save(self.hwnd, &self.data_dir, self.fullscreen);
+        }
         self.save_session();
         self.store.borrow_mut().save();
         for t in &mut self.tabs {

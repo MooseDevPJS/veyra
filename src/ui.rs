@@ -31,6 +31,8 @@ pub struct Theme {
     pub dark: bool,
     /// Acrylic backdrop behind the sidebar (false: solid frame).
     pub glass: bool,
+    /// Private window: night blue frame and a "Private" label.
+    pub private: bool,
 }
 
 impl Theme {
@@ -44,11 +46,23 @@ impl Theme {
     }
     /// Opaque frame color (solid mode, and the floating sidebar over the page).
     pub fn frame(&self) -> u32 {
-        if self.dark { 0x111113 } else { 0xE9E9EC }
+        if self.private {
+            0x101B3A // night blue
+        } else if self.dark {
+            0x111113
+        } else {
+            0xE9E9EC
+        }
     }
     /// Floating panels: command bar, tooltips.
     pub fn panel(&self) -> u32 {
-        if self.dark { 0x1F1F22 } else { 0xFBFBFC }
+        if self.private {
+            0x1C2648 // night blue, a step above the frame
+        } else if self.dark {
+            0x1F1F22
+        } else {
+            0xFBFBFC
+        }
     }
 }
 
@@ -176,6 +190,8 @@ pub enum MenuCmd {
     // Image under the pointer (address from App::context_image).
     OpenImage,
     DownloadImage,
+    /// Runs a shortcut action ("New tab" menu).
+    Shortcut(crate::shortcuts::Action),
     // Downloads quick menu.
     OpenDownload(usize),
     DownloadMenu(usize),
@@ -834,6 +850,21 @@ impl Ui {
         let rt: &ID2D1RenderTarget = dc;
         let ink = th.ink();
 
+        // Private window: a label at the bottom right, by Settings/Downloads.
+        if th.private {
+            let label = t("Privata", "Private");
+            let w = text_pill_width(label);
+            let bottom = height - PAD - BTN;
+            let pill = rect(self.width - PAD - w, bottom + 3.0, self.width - PAD, bottom + BTN - 3.0);
+            if let (Some(bg), Some(text)) = (b(0x8FB0FF, 0.18), b(0xD6E2FF, 1.0)) {
+                unsafe {
+                    dc.FillRoundedRectangle(&rr(pill, 12.0), &bg);
+                    let w16: Vec<u16> = label.encode_utf16().collect();
+                    dc.DrawText(&w16, &self.fonts.chip, &pill, &text, D2D1_DRAW_TEXT_OPTIONS_NONE, DWRITE_MEASURING_MODE_NATURAL);
+                }
+            }
+        }
+
         // Selection highlight slides between rows.
         let active_row = self.layout(tabs, height).into_iter().find_map(|(r, h)| match h {
             Hit::Tab(id) if tabs.iter().any(|t| t.id == id && t.active) => Some((id, r.top)),
@@ -1434,7 +1465,8 @@ impl Ui {
                 dc.DrawRoundedRectangle(&rr(r, 14.0), &line, 1.0, None);
             }
             let (Some(fg), Some(fg3), Some(hov), Some(line), Some(red)) =
-                (b(th.fg(), 1.0), b(th.fg(), 0.42), b(th.ink(), 0.08), b(th.ink(), 0.08), b(0xE5484D, 1.0))
+                // Shortcut hints at 0.62: 0.42 was under 4.5:1 on the light menu.
+                (b(th.fg(), 1.0), b(th.fg(), 0.62), b(th.ink(), 0.08), b(th.ink(), 0.08), b(0xE5484D, 1.0))
             else {
                 return;
             };
@@ -1560,7 +1592,11 @@ impl Ui {
                         }
                     }
                     None => {
-                        let ic = if matches!(item, Suggestion::Go { is_search: true, .. }) { Icon::Search } else { Icon::Globe };
+                        let ic = match item {
+                            Suggestion::Go { is_search: true, .. } => Icon::Search,
+                            Suggestion::Command(_) => Icon::Plus,
+                            _ => Icon::Globe,
+                        };
                         draw_icon(&self.gfx, rt, ic, ix, iy, &fg2);
                     }
                 }
@@ -1573,7 +1609,8 @@ impl Ui {
                 let main_r = if detail.is_empty() { rect(tl, top, tr, top + 44.0) } else { rect(tl, top, split - 10.0, top + 44.0) };
                 dc.DrawText(&main_w, &self.fonts.title, &main_r, &fg, D2D1_DRAW_TEXT_OPTIONS_CLIP, DWRITE_MEASURING_MODE_NATURAL);
                 if !detail.is_empty() {
-                    dc.DrawText(&detail_w, &self.fonts.small, &rect(split, top, tr, top + 44.0), &fg3, D2D1_DRAW_TEXT_OPTIONS_CLIP, DWRITE_MEASURING_MODE_NATURAL);
+                    // fg2: the lighter fg3 fell under 4.5:1 ("Comando", addresses).
+                    dc.DrawText(&detail_w, &self.fonts.small, &rect(split, top, tr, top + 44.0), &fg2, D2D1_DRAW_TEXT_OPTIONS_CLIP, DWRITE_MEASURING_MODE_NATURAL);
                 }
                 if i == self.bar.sel {
                     self.draw_chips(dc, &[enter_label.to_string()], row.right - 12.0 - chip_width(enter_label), top + 12.0, t);
@@ -1649,6 +1686,8 @@ fn describe(item: &Suggestion) -> (String, String, Option<&String>) {
         Suggestion::Go { input, is_search: true } => (format!("{} \u{201C}{input}\u{201D}", t("Cerca", "Search")), String::new(), None),
         Suggestion::Go { input, is_search: false } => (input.clone(), t("Vai all'indirizzo", "Go to address").into(), None),
         Suggestion::Tab { title, url, .. } => (title.clone(), t("Passa alla scheda", "Switch to tab").into(), Some(url)),
+        Suggestion::Command(crate::shortcuts::Action::PrivateWindow) => (t("Nuova finestra privata", "New private window").into(), t("Comando", "Command").into(), None),
+        Suggestion::Command(_) => (String::new(), String::new(), None),
         Suggestion::Bookmark { title, url } | Suggestion::History { title, url } => {
             let t = if title.is_empty() { url.clone() } else { title.clone() };
             (t, short_url(url), Some(url))

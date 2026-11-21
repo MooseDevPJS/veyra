@@ -351,6 +351,9 @@ impl App {
 
     /// Reloads the installed extensions list (the extensions button).
     pub fn refresh_extensions(&mut self) {
+        if self.private {
+            return; // no extensions in a private window
+        }
         let Some(profile) = self.profile() else { return };
         let mine = read_index(&self.extensions_dir());
         let hwnd = self.hwnd.0 as isize;
@@ -390,6 +393,9 @@ impl App {
 
     /// Switches each extension to what the active page's site wants.
     pub fn apply_extensions(&mut self) {
+        if self.private {
+            return;
+        }
         let host = self.active_index().map(|i| crate::app::host_of(&self.tabs[i].url)).unwrap_or_default();
         if host.is_empty() {
             return;

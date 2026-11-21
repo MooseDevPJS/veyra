@@ -118,6 +118,8 @@ pub(crate) struct WindowOpts {
     pub content: Content,
     /// Held by the pointer (a tab torn off): where the pointer is in it, px.
     pub follow: Option<POINT>,
+    /// Private window (app.rs `private`).
+    pub private: bool,
 }
 
 /// Opens a window. On failure the options come back (with the tab, if one
@@ -138,7 +140,7 @@ pub(crate) fn open_window(opts: WindowOpts) -> std::result::Result<HWND, WindowO
     let built = (|| -> Result<App> {
         let comp = comp::Comp::new(hwnd, d3d)?;
         let gfx = gfx::Gfx::new(comp.factory.clone())?;
-        let mut ui = ui::Ui::new(gfx, ui::Theme { dark: true, glass: true })?;
+        let mut ui = ui::Ui::new(gfx, ui::Theme { dark: true, glass: true, private: false })?;
         ui.width = settings.sidebar_width;
         ui.show_nav = settings.show_nav_buttons;
         ui.window_buttons = !settings.title_bar;
@@ -153,13 +155,18 @@ pub(crate) fn open_window(opts: WindowOpts) -> std::result::Result<HWND, WindowO
         }
         return Err(opts);
     };
+    app.private = opts.private;
     app.apply_theme();
+    app.refresh_title();
     if first {
         app.migrate_background();
     }
-    app.load_downloads();
-    // Pinned tabs are shared by all windows; normal ones come from the session.
-    app.load_pins();
+    // A private window starts empty: no download list, no pinned tabs.
+    if !app.private {
+        app.load_downloads();
+        // Pinned tabs are shared by all windows; normal ones come from the session.
+        app.load_pins();
+    }
     match opts.content {
         Content::Restore => {
             if !app.restore_session() {
@@ -241,7 +248,7 @@ fn main() -> Result<()> {
     SHARED.with(|s| *s.borrow_mut() = Some(Shared { env, blocker, store, d3d, data_dir }));
 
     let content = if urls.is_empty() { Content::Restore } else { Content::Urls(urls) };
-    let Ok(hwnd) = open_window(WindowOpts { at: None, size: None, content, follow: None }) else {
+    let Ok(hwnd) = open_window(WindowOpts { at: None, size: None, content, follow: None, private: false }) else {
         return Err(Error::from(E_POINTER));
     };
     sys::perf("startup: shown", t0, 0);
@@ -824,7 +831,7 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LR
                 multi::OPEN_WINDOW => {
                     reply(1);
                     let urls = serde_json::from_str::<Vec<String>>(&json).unwrap_or_default();
-                    if let Ok(w) = open_window(WindowOpts { at: None, size: None, content: Content::Urls(urls), follow: None }) {
+                    if let Ok(w) = open_window(WindowOpts { at: None, size: None, content: Content::Urls(urls), follow: None, private: false }) {
                         unsafe {
                             let _ = SetForegroundWindow(w);
                         }

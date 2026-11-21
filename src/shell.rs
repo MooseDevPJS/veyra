@@ -349,7 +349,8 @@ impl App {
         // Frame under everything: solid when glass is off; with glass a tint
         // over the Acrylic keeps text readable on any wallpaper.
         let th = self.ui.theme;
-        let alpha = if !th.glass { 1.0 } else if th.dark { 0.58 } else { 0.42 };
+        // Private: the night blue must read as such over any wallpaper.
+        let alpha = if !th.glass { 1.0 } else if th.private { 0.9 } else if th.dark { 0.58 } else { 0.42 };
         let color = crate::gfx::rgba(th.frame(), alpha);
         if self.frame_drawn != (th.glass, w, h, th.dark) {
             self.frame_drawn = (th.glass, w, h, th.dark);
@@ -462,6 +463,8 @@ impl App {
                 if t.title.is_empty() { crate::ui::short_url(&t.url) } else { t.title.clone() }
             })
             .unwrap_or_else(|| "Veyra".into());
+        // The taskbar tells private windows apart too.
+        let text = if self.private { format!("{text} \u{2014} {}", crate::i18n::t("Privata", "Private")) } else { text };
         unsafe {
             let _ = SetWindowTextW(self.hwnd, &HSTRING::from(text));
         }
@@ -879,6 +882,7 @@ impl App {
             },
             Mouse::RightUp => match hit {
                 Some(Hit::Tab(id) | Hit::Tile(id) | Hit::CloseTab(id)) => self.open_menu(id, xd, yd),
+                Some(Hit::NewTab) => self.open_new_tab_menu(xd, yd),
                 Some(Hit::Group(g)) => self.open_group_menu(g, xd, yd),
                 Some(Hit::Bookmark(i)) => self.open_bookmark_menu(i, xd, yd),
                 _ => {}
@@ -1190,6 +1194,7 @@ impl App {
             size: Some((w, h)),
             content: crate::Content::Tab(tab),
             follow: Some(off),
+            private: self.private,
         };
         if let Err(back) = crate::open_window(opts) {
             self.take_back(back);
@@ -1306,6 +1311,7 @@ impl App {
             size: None,
             content: crate::Content::Tab(tab),
             follow: None,
+            private: self.private,
         };
         if let Err(back) = crate::open_window(opts) {
             self.take_back(back);
@@ -1331,6 +1337,10 @@ impl App {
         if pinned {
             // Pinned tabs are in every window already.
             items.retain(|i| !matches!(i.cmd, MenuCmd::NewWindow));
+        }
+        if self.private {
+            // Pinned tabs are shared with every window: none here.
+            items.retain(|i| !matches!(i.cmd, MenuCmd::Pin));
         }
         if self.tabs.len() > 1 {
             items.push(item(crate::i18n::t("Chiudi le altre schede", "Close other tabs"), MenuCmd::CloseOthers, String::new(), false));
@@ -1441,6 +1451,29 @@ impl App {
     }
 
     /// Bookmark menu: removing is a deliberate choice, never a single click.
+    /// Right-click on "New tab": a new tab, or a new private window.
+    fn open_new_tab_menu(&mut self, x: f32, y: f32) {
+        use crate::i18n::t;
+        use crate::ui::{Menu, MenuCmd, MenuItem};
+        let key = |a: Action| self.settings.shortcuts.0.get(&a).and_then(|k| k.first().cloned()).unwrap_or_default();
+        let items = vec![
+            MenuItem { label: t("Nuova scheda", "New tab").into(), cmd: MenuCmd::Shortcut(Action::NewTab), keys: key(Action::NewTab), sep: false },
+            MenuItem {
+                label: t("Nuova finestra privata", "New private window").into(),
+                cmd: MenuCmd::Shortcut(Action::PrivateWindow),
+                keys: key(Action::PrivateWindow),
+                sep: false,
+            },
+        ];
+        let mut tw = Tween::new(0.0);
+        tw.go(1.0, if self.ui.anims { 110 } else { 50 });
+        self.hide_tip();
+        self.ui.set_hover(None);
+        let tab = self.active.unwrap_or(0);
+        self.ui.menu = Some(Menu { tab, x, y, items, hover: None, t: tw, page: None });
+        self.redraw();
+    }
+
     fn open_bookmark_menu(&mut self, i: usize, x: f32, y: f32) {
         use crate::i18n::t;
         use crate::ui::{Menu, MenuCmd, MenuItem};
@@ -1684,6 +1717,7 @@ impl App {
                 return;
             }
             OpenDownload(i) => return self.open_download(i),
+            Shortcut(action) => return self.run(action),
             OpenImage => {
                 let src = self.context_image.clone();
                 if src.starts_with("http") {
@@ -1775,7 +1809,8 @@ impl App {
                 self.redraw();
             }
             OpenWindow(url) => {
-                let _ = crate::open_window(crate::WindowOpts { at: None, size: None, content: crate::Content::Urls(vec![url]), follow: None });
+                let private = self.private;
+                let _ = crate::open_window(crate::WindowOpts { at: None, size: None, content: crate::Content::Urls(vec![url]), follow: None, private });
             }
             CopyText(text) => crate::app::copy_to_clipboard(self.hwnd, &text),
             SearchText(text) => {
@@ -1786,7 +1821,7 @@ impl App {
             Back => self.run(Action::Back),
             Forward => self.run(Action::Forward),
             PageReload => self.run(Action::Reload),
-            OpenHere(_) | RemoveBookmark(_) | ExtPick(_) | ExtSite(..) | ExtOpen(_) | ExtStore | ManageExtensions | Bar(_) | OpenDownload(_) | DownloadsFolder | AllDownloads | DownloadMenu(_) | DownloadOpenWhenDone(_) | DownloadPause(_) | DownloadCancel(_) | OpenImage | DownloadImage => {}
+            OpenHere(_) | RemoveBookmark(_) | ExtPick(_) | ExtSite(..) | ExtOpen(_) | ExtStore | ManageExtensions | Bar(_) | OpenDownload(_) | DownloadsFolder | AllDownloads | DownloadMenu(_) | DownloadOpenWhenDone(_) | DownloadPause(_) | DownloadCancel(_) | OpenImage | DownloadImage | Shortcut(_) => {}
         }
     }
 
@@ -1899,7 +1934,11 @@ impl App {
             .filter(|t| Some(t.id) != self.active)
             .map(|t| (t.id, t.title.as_str(), t.url.as_str()))
             .collect();
-        let items = self.store.borrow().suggest(&text, &tabs, is_address(&text), store::now());
+        let mut items = self.store.borrow().suggest(&text, &tabs, is_address(&text), store::now());
+        // Commands come right after "go / search" (both languages always work).
+        for (n, action) in command_matches(&text).into_iter().enumerate() {
+            items.insert((1 + n).min(items.len()), Suggestion::Command(action));
+        }
         self.ui.bar.items = items;
         self.ui.bar.sel = 0;
         self.ui.bar.caret_blink = Instant::now();
@@ -2125,6 +2164,10 @@ impl App {
                 let url = self.settings.resolve_input(&input);
                 self.go(url);
             }
+            Suggestion::Command(action) => {
+                self.close_bar();
+                self.run(action);
+            }
         }
     }
 
@@ -2145,7 +2188,25 @@ impl App {
 
 /// The Veyra window visible under `pt`, looking past `own` (the torn-off
 /// window being dragged, which is under the pointer itself).
-pub(crate) fn browser_window_under(pt: POINT, own: windows::Win32::Foundation::HWND) -> Option<windows::Win32::Foundation::HWND> {
+/// Command bar commands and the words that find them, in Italian and in
+/// English whatever the language of the app.
+const COMMANDS: &[(Action, &[&str])] = &[(
+    Action::PrivateWindow,
+    &["privata", "finestra privata", "nuova finestra privata", "navigazione privata", "private", "private window", "new private window", "private browsing"],
+)];
+
+/// Commands whose words start with what is typed (at least 3 letters).
+fn command_matches(text: &str) -> Vec<Action> {
+    let q = text.trim().to_lowercase();
+    if q.chars().count() < 3 {
+        return Vec::new();
+    }
+    COMMANDS.iter().filter(|(_, words)| words.iter().any(|w| w.starts_with(&q))).map(|(a, _)| *a).collect()
+}
+
+/// The Veyra window under `pt` (not `own`), if it is of the same kind:
+/// tabs never move between private and normal windows.
+pub(crate) fn browser_window_under(pt: POINT, own: windows::Win32::Foundation::HWND, private: bool) -> Option<windows::Win32::Foundation::HWND> {
     use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
     unsafe {
         let mut h = GetTopWindow(None).ok()?;
@@ -2165,7 +2226,8 @@ pub(crate) fn browser_window_under(pt: POINT, own: windows::Win32::Foundation::H
                 let mut class = [0u16; 32];
                 let n = GetClassNameW(h, &mut class);
                 let is_browser = String::from_utf16_lossy(&class[..n.max(0) as usize]) == "VeyraMain";
-                return is_browser.then_some(h);
+                let same = is_browser && crate::with_window(h, |a| a.private == private).unwrap_or(false);
+                return same.then_some(h);
             }
             h = GetWindow(h, GW_HWNDNEXT).ok()?;
         }

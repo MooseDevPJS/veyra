@@ -87,11 +87,7 @@ impl App {
             }
             Ok(())
         }));
-        unsafe {
-            if let Ok(env3) = self.env.cast::<ICoreWebView2Environment3>() {
-                let _ = env3.CreateCoreWebView2CompositionController(hwnd, &handler);
-            }
-        }
+        let _ = self.new_controller(&handler); // private window: private preview
         self.layout();
     }
 

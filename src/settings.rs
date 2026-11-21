@@ -120,6 +120,12 @@ impl Settings {
         self.sidebar_width = self.sidebar_width.clamp(200.0, 420.0);
         self.devtools_width = self.devtools_width.clamp(280.0, 1400.0);
         self.history_days = self.history_days.clamp(1, 3650);
+        // Actions added in a later version get their default (a file saved
+        // before had no "history" entry, so Settings did not list it). An
+        // entry the user emptied stays empty.
+        for (action, keys) in Bindings::default().0 {
+            self.shortcuts.0.entry(action).or_insert(keys);
+        }
         if !self.search_url.contains("{}") || !self.search_url.starts_with("http") {
             self.search_url = Settings::default().search_url;
         }

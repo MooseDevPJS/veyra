@@ -144,6 +144,9 @@ impl App {
     }
 
     fn save_downloads(&self) {
+        if self.private {
+            return; // the files are saved; the list of them is not
+        }
         let list: Vec<&Record> = self.downloads.iter().take(100).collect();
         if let Ok(json) = serde_json::to_string_pretty(&list) {
             let _ = std::fs::write(self.data_dir.join("downloads.json"), json);
