@@ -29,6 +29,47 @@ use crate::{
 };
 
 pub const TIMER_ANIM: usize = 3;
+
+/// Paces animation frames on the screen's refresh (see `start_frames`).
+/// Dropping it stops the thread.
+pub struct FrameClock {
+    run: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// A frame was asked for and not drawn yet: no pile-up in the queue.
+    pending: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl FrameClock {
+    fn start(hwnd: windows::Win32::Foundation::HWND, every: u32) -> Self {
+        use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+        use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+        let run = Arc::new(AtomicBool::new(true));
+        let pending = Arc::new(AtomicBool::new(false));
+        let (r, p, h) = (run.clone(), pending.clone(), hwnd.0 as isize);
+        std::thread::spawn(move || {
+            let mut n = 0u32;
+            while r.load(Ordering::Acquire) {
+                // Waits for the next refresh; without composition, ~60 Hz.
+                if unsafe { windows::Win32::Graphics::Dwm::DwmFlush() }.is_err() {
+                    std::thread::sleep(std::time::Duration::from_millis(16));
+                }
+                n += 1;
+                if n % every != 0 || p.swap(true, Ordering::AcqRel) {
+                    continue;
+                }
+                unsafe {
+                    let _ = PostMessageW(Some(HWND(h as *mut _)), WM_TIMER, WPARAM(TIMER_ANIM), LPARAM(0));
+                }
+            }
+        });
+        FrameClock { run, pending }
+    }
+}
+
+impl Drop for FrameClock {
+    fn drop(&mut self) {
+        self.run.store(false, std::sync::atomic::Ordering::Release);
+    }
+}
 pub const TIMER_TIP: usize = 4;
 pub const TIMER_CARET: usize = 5;
 pub const TIMER_NOTICE: usize = 8;
@@ -233,35 +274,33 @@ impl App {
 
     /// One animation frame; stops the timer when everything settled.
     pub fn frame(&mut self) {
+        if let Some(c) = &self.frame_clock {
+            c.pending.store(false, std::sync::atomic::Ordering::Release);
+        }
         // Closing command bar: finish the fade, then remove it.
         self.render();
         if !self.ui.animating() {
             self.stop_frames();
+            self.settle_history();
         }
     }
 
-    /// Animation frames: 60 fps (30 in light PC mode). Windows timers tick
-    /// every 15.6 ms by default, which made 16 ms frames uneven (16/31 ms):
-    /// a 1 ms timer resolution is asked for only while something moves.
+    /// Animation frames, one per screen refresh (every other one in light PC
+    /// mode). A timer made them uneven (16 or 31 ms apart, measured): a
+    /// thread waits for each refresh (DwmFlush) and asks for a frame.
     fn start_frames(&mut self) {
-        let ms = if self.settings.low_end_mode { 33 } else { 16 };
-        unsafe {
-            if !self.fine_timer {
-                self.fine_timer = true;
-                windows::Win32::Media::timeBeginPeriod(1);
-            }
-            SetTimer(Some(self.hwnd), TIMER_ANIM, ms, None);
+        if self.frame_clock.is_none() {
+            self.frame_clock = Some(FrameClock::start(self.hwnd, if self.settings.low_end_mode { 2 } else { 1 }));
         }
     }
 
     fn stop_frames(&mut self) {
-        unsafe {
-            let _ = KillTimer(Some(self.hwnd), TIMER_ANIM);
-            if self.fine_timer {
-                self.fine_timer = false;
-                windows::Win32::Media::timeEndPeriod(1);
-            }
-        }
+        self.frame_clock = None;
+    }
+
+    /// Draws now, outside the usual WM_RENDER (before a motion starts).
+    pub fn render_now(&mut self) {
+        self.render();
     }
 
     fn render(&mut self) {
@@ -305,6 +344,7 @@ impl App {
             url
         };
         let page = self.page_dip();
+        let page_radius = if self.is_fullscreen() { 0.0 } else { crate::ui::PAGE_RADIUS };
         let enter = crate::i18n::t("Invio", "Enter").to_string();
         // Frame under everything: solid when glass is off; with glass a tint
         // over the Acrylic keeps text readable on any wallpaper.
@@ -335,7 +375,10 @@ impl App {
             rect(r.left as f32 / s, r.top as f32 / s, r.right as f32 / s, r.bottom as f32 / s)
         });
         let peek_buttons = self.peek_buttons();
-        let history_card = self.history_rect().map(|r| {
+        // The panel's slide follows the same frame as the blur and dimming.
+        self.move_history();
+        let history_t = self.history_progress().unwrap_or(0.0);
+        let history_card = self.history_rect().filter(|_| history_t > 0.001 || self.history_open()).map(|r| {
             let s = self.scale;
             rect(r.left as f32 / s, r.top as f32 / s, r.right as f32 / s, r.bottom as f32 / s)
         });
@@ -370,7 +413,7 @@ impl App {
                         ui.draw_peek_chrome(dc, page, card, buttons, peek_hover);
                     }
                     if let Some(card) = history_card {
-                        ui.dim_around(dc, page, card);
+                        ui.dim_around(dc, page, page_radius, card, 18.0, history_t);
                     }
                     if let Some((card, host, what, hover)) = &prompt {
                         ui.draw_prompt(dc, *card, host, what, *hover);
@@ -388,7 +431,7 @@ impl App {
                 self.comp.overlay.draw(device, 1, 1, scale, |_| {});
             }
         }
-        let blur = if self.peek.is_some() || self.history_panel.is_some() { 1.0 } else { bar_t };
+        let blur = if self.peek.is_some() { 1.0 } else { bar_t.max(history_t) };
         self.comp.set_page_blur(14.0 * blur * self.scale);
         self.comp.commit();
     }
@@ -654,7 +697,7 @@ impl App {
             return;
         }
         // History panel: the same.
-        if self.history_panel.is_some() && !self.resizing && !self.resizing_dock {
+        if self.history_open() && !self.resizing && !self.resizing_dock {
             self.history_mouse(kind, x, y, keys, data);
             return;
         }
@@ -1971,7 +2014,7 @@ impl App {
             self.close_peek();
             return true;
         }
-        if self.history_panel.is_some() && vk == 0x1B {
+        if self.history_open() && vk == 0x1B {
             self.close_history();
             return true;
         }

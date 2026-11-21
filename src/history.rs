@@ -4,6 +4,11 @@
 //! composition layer, like the link preview: the page behind is blurred and
 //! dimmed, so the panel's translucent background reads as glass. The page
 //! asks for visits and deletes them with JSON messages (`history_message`).
+//!
+//! Motion: nothing moves until the page has drawn its list ("ready"); then
+//! one tween (`ui.history_t`) drives the blur, the dimming and the panel's
+//! fade and slide together, every frame (shell.rs). Closed, the WebView is
+//! kept hidden, so opening it again is immediate.
 
 use webview2_com::{Microsoft::Web::WebView2::Win32::*, *};
 use windows::core::Result;
@@ -24,23 +29,66 @@ const ICONS_HOST: &str = "veyra.favicons";
 /// Visits sent per request (the list loads more while scrolling).
 const BATCH: usize = 150;
 
+/// Tests: toggles the panel (no keyboard needed). Answers 1 when open.
+pub const WM_TEST_HISTORY: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 14;
+
+/// How far the panel slides in, in DIPs.
+const SLIDE: f32 = 18.0;
+
 pub struct HistoryPanel {
     view: Option<View>,
+    /// Open (false: closing, or kept hidden for next time).
+    open: bool,
+    /// In the composition layer now.
+    shown: bool,
+    /// Theme and language the page was made with.
+    look: (bool, &'static str),
 }
 
 impl App {
+    pub fn history_open(&self) -> bool {
+        self.history_panel.as_ref().is_some_and(|h| h.open)
+    }
+
+    /// The panel's motion 0..1 while it is on screen (also while closing).
+    pub fn history_progress(&self) -> Option<f32> {
+        self.history_panel.as_ref().filter(|h| h.shown).map(|_| self.ui.history_t.value())
+    }
+
     pub fn toggle_history(&mut self) {
-        if self.history_panel.is_some() { self.close_history() } else { self.open_history() }
+        if self.history_open() { self.close_history() } else { self.open_history() }
     }
 
     pub fn open_history(&mut self) {
-        if self.history_panel.is_some() {
+        if self.history_open() {
             return;
         }
         self.close_menu();
         self.close_peek(); // they share the layer
         self.close_bar();
-        self.history_panel = Some(HistoryPanel { view: None });
+        let look = (self.ui.theme.dark, crate::i18n::code());
+        // The panel kept from last time: show it again (fresh list first).
+        if let Some(h) = &mut self.history_panel
+            && h.look == look
+            && let Some(v) = &h.view
+        {
+            h.open = true;
+            if !h.shown {
+                h.shown = true;
+                self.comp.show_peek(Some(&v.visual));
+            }
+            unsafe {
+                let _ = v.controller.SetIsVisible(true);
+                let _ = v.controller.MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+            }
+            self.history_reply(&serde_json::json!({ "type": "refresh" }));
+            self.layout();
+            self.redraw();
+            return;
+        }
+        self.drop_history();
+        self.ui.history_t.set(0.0);
+        self.history_panel = Some(HistoryPanel { view: None, open: true, shown: false, look });
         let hwnd = self.hwnd;
         let handler = CreateCoreWebView2CompositionControllerCompletedHandler::create(Box::new(move |err, c| {
             match (err, c) {
@@ -59,7 +107,7 @@ impl App {
     }
 
     pub fn history_created(&mut self, cc: ICoreWebView2CompositionController) {
-        if self.history_panel.is_none() {
+        if !self.history_open() {
             // Closed before it was ready.
             if let Ok(c) = cc.cast::<ICoreWebView2Controller>() {
                 unsafe {
@@ -153,36 +201,83 @@ impl App {
         })();
         match result {
             Ok(view) => {
+                // In the layer but invisible (progress 0) until "ready".
                 self.comp.show_peek(Some(&view.visual));
                 if let Some(h) = &mut self.history_panel {
                     h.view = Some(view);
+                    h.shown = true;
                 }
                 self.layout();
+                self.redraw();
             }
             Err(e) => {
                 eprintln!("history: {e}");
-                self.close_history();
+                self.drop_history();
             }
         }
     }
 
+    /// Slides the panel out; it stays hidden for next time (`settle_history`).
     pub fn close_history(&mut self) {
+        let Some(h) = &mut self.history_panel else { return };
+        if !h.open {
+            return;
+        }
+        h.open = false;
+        if h.view.is_none() {
+            // Still being created: nothing on screen yet.
+            return self.drop_history();
+        }
+        let ms = if self.ui.anims { 170 } else { 60 };
+        self.ui.history_t.go(0.0, ms);
+        self.focus_page();
+        self.redraw();
+    }
+
+    /// Off screen at once (the link preview takes the layer).
+    pub fn hide_history_now(&mut self) {
+        if let Some(h) = &mut self.history_panel {
+            h.open = false;
+        }
+        self.ui.history_t.set(0.0);
+        self.settle_history();
+    }
+
+    /// After a frame: once the closing slide ended, out of the layer, hidden.
+    pub fn settle_history(&mut self) {
+        let Some(h) = &mut self.history_panel else { return };
+        if h.open || !h.shown || self.ui.history_t.running() {
+            return;
+        }
+        h.shown = false;
+        if let Some(v) = &h.view {
+            self.comp.hide_peek(&v.visual);
+            unsafe {
+                let _ = v.controller.SetIsVisible(false);
+            }
+        }
+        self.redraw();
+    }
+
+    /// Destroys the panel's WebView (failed, or made with another theme).
+    fn drop_history(&mut self) {
         if let Some(h) = self.history_panel.take() {
             if let Some(v) = h.view {
+                if h.shown {
+                    self.comp.hide_peek(&v.visual);
+                }
                 unsafe {
                     let _ = v.controller.Close();
                 }
             }
-            self.comp.show_peek(None);
-            self.focus_page();
-            self.layout();
-            self.redraw();
         }
+        self.ui.history_t.set(0.0);
+        self.redraw();
     }
 
     /// The panel in client px: on the left of the page, its full height.
     pub fn history_rect(&self) -> Option<RECT> {
-        self.history_panel.as_ref()?;
+        self.history_panel.as_ref().filter(|h| h.shown)?;
         let p = self.page_rect();
         let s = self.scale;
         let gap = (12.0 * s) as i32;
@@ -193,12 +288,24 @@ impl App {
 
     pub fn place_history(&self) {
         let Some(r) = self.history_rect() else { return };
-        self.comp.set_peek_rect(r, 18.0 * self.scale);
         if let Some(v) = self.history_panel.as_ref().and_then(|h| h.view.as_ref()) {
             unsafe {
                 let _ = v.controller.SetBounds(RECT { left: 0, top: 0, right: r.right - r.left, bottom: r.bottom - r.top });
             }
         }
+        self.move_history();
+    }
+
+    /// Each frame: the panel's slide and fade for the current progress.
+    pub fn move_history(&self) {
+        let (Some(r), Some(t)) = (self.history_rect(), self.history_progress()) else { return };
+        let dx = (-(1.0 - t) * SLIDE * self.scale).round() as i32;
+        if crate::sys::perf_on() && self.ui.history_t.running() {
+            eprintln!("[history] {:?} t={t:.3}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or(0));
+        }
+        let moved = RECT { left: r.left + dx, right: r.right + dx, ..r };
+        self.comp.set_peek_rect(moved, 18.0 * self.scale);
+        self.comp.set_peek_opacity(t);
     }
 
     /// Mouse while the panel is open: inside goes to it, a click outside
@@ -268,6 +375,17 @@ impl App {
                 self.history_reply(&serde_json::json!({ "type": "changed" }));
             }
             Some("close") => self.close_history(),
+            // The list is drawn: now it can come in.
+            Some("ready") => {
+                if self.history_open() {
+                    // One frame at 0 first: the dimming surface gets made
+                    // now, not in the first frame of the motion (it jumped).
+                    self.render_now();
+                    let ms = if self.ui.anims { 280 } else { 60 };
+                    self.ui.history_t.go(1.0, ms);
+                    self.redraw();
+                }
+            }
             _ => {}
         }
     }

@@ -6,7 +6,8 @@ using System; using System.Runtime.InteropServices;
 public class ShotWin { [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
 public struct RECT { public int L,T,R,B; } }
 '@ }
-$p = Get-Process $Proc | Select-Object -First 1
+# The copy built here first (never the installed Veyra the user is using).
+$p = Get-Process $Proc | Sort-Object { -not ($_.Path -like "*\target\*") }, StartTime | Select-Object -First 1
 $h = $p.MainWindowHandle
 [ShotWin]::SetForegroundWindow($h) | Out-Null
 Start-Sleep -Milliseconds 600

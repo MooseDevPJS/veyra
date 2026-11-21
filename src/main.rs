@@ -846,6 +846,13 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LR
             }
         }
         // Test scripts: how many tabs this window has (normal | pinned << 16).
+        history::WM_TEST_HISTORY => LRESULT(
+            with_window(hwnd, |a| {
+                a.toggle_history();
+                a.history_open() as isize
+            })
+            .unwrap_or(-1),
+        ),
         multi::WM_TAB_COUNT => LRESULT(
             with_window(hwnd, |a| {
                 let pinned = a.tabs.iter().filter(|t| t.pinned).count();

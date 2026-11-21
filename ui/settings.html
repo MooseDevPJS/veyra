@@ -241,7 +241,7 @@
     </div>
     <div class="row">
       <label>Conserva la cronologia per
-        <span class="help" tabindex="0">?<span>Le visite più vecchie vengono cancellate da sole. La cronologia si apre con Ctrl+H.</span></span>
+        <span class="help" tabindex="0">?<span id="history-help"></span></span>
       </label>
       <input type="number" min="1" max="3650" data-key="history_days"><span class="unit">giorni</span>
     </div>
@@ -375,7 +375,6 @@ const EN = {
   'Disattivalo se usi un gestore di password come Bitwarden.': 'Turn it off if you use a password manager like Bitwarden.',
   'Compila automaticamente i moduli': 'Autofill forms',
   'Conserva la cronologia per': 'Keep history for', 'giorni': 'days',
-  'Le visite più vecchie vengono cancellate da sole. La cronologia si apre con Ctrl+H.': 'Older visits are deleted automatically. Open the history with Ctrl+H.',
   'Clicca una scorciatoia e premi i tasti nuovi. Canc la svuota, Esc annulla.': 'Click a shortcut and press the new keys. Delete clears it, Esc cancels.',
   'Cerca aggiornamenti': 'Check for updates', 'Versione': 'Version', 'Licenze': 'Licenses', 'Ripristina le impostazioni': 'Reset settings', 'Ripristina': 'Reset', 'Nessuna': 'None',
   'Veyra: MIT. Adblock: adblock-rust di Brave (MPL-2.0). Liste: EasyList ed EasyPrivacy (GPLv3 / CC BY-SA, The EasyList authors), filtri e scriptlet di uBlock Origin (GPLv3). Motore web: Microsoft WebView2.':
@@ -497,6 +496,18 @@ function render() {
   document.getElementById('custom-row').hidden = known;
   document.getElementById('custom-engine').value = S.search_url;
   renderShortcuts();
+  renderHistoryHelp();
+}
+
+// "?" of the history row: names the shortcut as it is set now.
+function renderHistoryHelp() {
+  const keys = S.shortcuts.history || [];
+  const en = LANG === 'en';
+  const first = en ? 'Older visits are deleted automatically.' : 'Le visite più vecchie vengono cancellate da sole.';
+  const open = keys.length
+    ? (en ? `Open the history with ${keys.join(' or ')}.` : `La cronologia si apre con ${keys.join(' o ')}.`)
+    : (en ? 'No shortcut opens the history: set one in Shortcuts.' : 'Nessuna scorciatoia apre la cronologia: puoi assegnarla in Scorciatoie.');
+  document.getElementById('history-help').textContent = first + ' ' + open;
 }
 
 // ---- new tab background ----
@@ -528,10 +539,10 @@ function renderShortcuts() {
     input.addEventListener('keydown', (e) => {
       e.preventDefault();
       if (e.key === 'Escape') { input.value = S.shortcuts[action].join(', '); input.blur(); return; }
-      if (e.key === 'Delete' || e.key === 'Backspace') { S.shortcuts[action] = []; input.value = ''; save(); return; }
+      if (e.key === 'Delete' || e.key === 'Backspace') { S.shortcuts[action] = []; input.value = ''; save(); renderHistoryHelp(); return; }
       const combo = comboOf(e);
       if (!combo) return;
-      S.shortcuts[action] = [combo]; input.value = combo; save(); input.blur();
+      S.shortcuts[action] = [combo]; input.value = combo; save(); renderHistoryHelp(); input.blur();
     });
     row.append(label, input);
     box.append(row);

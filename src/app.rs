@@ -404,7 +404,8 @@ pub struct App {
     pub(crate) card: Option<crate::downloads::Card>,
     pub(crate) last_download: Option<Instant>,
     /// 1 ms timer resolution requested (only while animating).
-    pub(crate) fine_timer: bool,
+    /// Animation frames on the screen refresh (shell.rs), while something moves.
+    pub(crate) frame_clock: Option<crate::shell::FrameClock>,
     /// The open menu is the downloads list (kept live while it is open).
     pub(crate) downloads_menu: bool,
     /// Image address from the page's last right-click (see peek::page_script).
@@ -479,7 +480,7 @@ impl App {
             downloads: Vec::new(),
             card: None,
             last_download: None,
-            fine_timer: false,
+            frame_clock: None,
             downloads_menu: false,
             context_image: String::new(),
             background_run: None,
@@ -1597,6 +1598,15 @@ fn wire_events(
                 args.IsSuccess(&mut ok)?;
                 if ok.as_bool() {
                     return Ok(());
+                }
+                // The server answered with a page of its own (403, 404, 503...):
+                // show it. Cloudflare's "checking your browser" page is a 403.
+                if let Ok(a2) = args.cast::<ICoreWebView2NavigationCompletedEventArgs2>() {
+                    let mut http = 0;
+                    a2.HttpStatusCode(&mut http)?;
+                    if http > 0 {
+                        return Ok(());
+                    }
                 }
                 let mut status = COREWEBVIEW2_WEB_ERROR_STATUS_UNKNOWN;
                 args.WebErrorStatus(&mut status)?;

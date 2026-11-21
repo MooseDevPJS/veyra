@@ -124,6 +124,26 @@ impl Comp {
                 let _ = self.peek.AddVisual(v, true, None);
                 self.peek_shown = Some(v.clone());
             }
+            // A link preview is always fully visible (the history panel fades).
+            if let Ok(v3) = self.peek.cast::<IDCompositionVisual3>() {
+                let _ = v3.SetOpacity2(1.0);
+            }
+        }
+    }
+
+    /// Takes `visual` out of the preview layer if it is the one shown.
+    pub fn hide_peek(&mut self, visual: &IDCompositionVisual2) {
+        if self.peek_shown.as_ref() == Some(visual) {
+            self.show_peek(None);
+        }
+    }
+
+    /// Fades the preview layer (1 = opaque).
+    pub fn set_peek_opacity(&self, opacity: f32) {
+        if let Ok(v3) = self.peek.cast::<IDCompositionVisual3>() {
+            unsafe {
+                let _ = v3.SetOpacity2(opacity.clamp(0.0, 1.0));
+            }
         }
     }
 

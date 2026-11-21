@@ -67,7 +67,7 @@ impl App {
             return;
         }
         self.close_menu();
-        self.close_history(); // they share the layer
+        self.hide_history_now(); // they share the layer
         if let Some(p) = &mut self.peek {
             p.url = url.clone();
             if let Some(v) = &p.view {

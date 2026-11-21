@@ -251,6 +251,8 @@ pub struct Ui {
     pub compact: bool,
     /// Hidden sidebar revealed by hovering the left edge (floats over the page).
     pub peek: Tween,
+    /// History panel coming in (1) or going out (0): see history.rs.
+    pub history_t: Tween,
     pub show_nav: bool,
     /// Minimize/maximize/close in the sidebar (off with the classic title bar).
     pub window_buttons: bool,
@@ -317,6 +319,7 @@ impl Ui {
             visible: true,
             compact: false,
             peek: Tween::new(0.0),
+            history_t: Tween::new(0.0),
             show_nav: true,
             window_buttons: true,
             maximized: false,
@@ -367,6 +370,7 @@ impl Ui {
         self.card_out.running()
             || self.sel_y.running()
             || self.peek.running()
+            || self.history_t.running()
             || self.bar.t.running()
             || self.tip.as_ref().is_some_and(|t| t.t.running())
             || self.menu.as_ref().is_some_and(|m| m.t.running())
@@ -1114,18 +1118,20 @@ impl Ui {
     }
 
     /// Dims the page around a card (link preview, history panel); the card
-    /// itself stays undimmed.
-    pub fn dim_around(&self, dc: &ID2D1DeviceContext, page: D2D_RECT_F, card: D2D_RECT_F) {
+    /// itself stays undimmed. Follows both rounded outlines (square bands
+    /// showed past the page's rounded corners). `amount`: 0..1 while fading.
+    #[allow(clippy::too_many_arguments)]
+    pub fn dim_around(&self, dc: &ID2D1DeviceContext, page: D2D_RECT_F, page_radius: f32, card: D2D_RECT_F, card_radius: f32, amount: f32) {
         unsafe {
-            if let Ok(dim) = dc.CreateSolidColorBrush(&rgba(0x000000, if self.theme.dark { 0.32 } else { 0.18 }), None) {
-                for band in [
-                    rect(page.left, page.top, page.right, card.top),
-                    rect(page.left, card.bottom, page.right, page.bottom),
-                    rect(page.left, card.top, card.left, card.bottom),
-                    rect(card.right, card.top, page.right, card.bottom),
-                ] {
-                    dc.FillRectangle(&band, &dim);
-                }
+            let Ok(dim) = dc.CreateSolidColorBrush(&rgba(0x000000, amount * if self.theme.dark { 0.32 } else { 0.18 }), None) else { return };
+            let shape = dc.GetFactory().ok().and_then(|f| {
+                let outer = f.CreateRoundedRectangleGeometry(&rr(page, page_radius)).ok()?;
+                let hole = f.CreateRoundedRectangleGeometry(&rr(card, card_radius)).ok()?;
+                // Alternate fill: inside the page, outside the card.
+                f.CreateGeometryGroup(D2D1_FILL_MODE_ALTERNATE, &[Some(outer.cast().ok()?), Some(hole.cast().ok()?)]).ok()
+            });
+            if let Some(shape) = shape {
+                dc.FillGeometry(&shape, &dim, None);
             }
         }
     }
@@ -1134,7 +1140,7 @@ impl Ui {
     pub fn draw_peek_chrome(&self, dc: &ID2D1DeviceContext, page: D2D_RECT_F, card: D2D_RECT_F, buttons: (D2D_RECT_F, D2D_RECT_F), hover: Option<crate::peek::PeekButton>) {
         use crate::peek::PeekButton;
         let th = self.theme;
-        self.dim_around(dc, page, card);
+        self.dim_around(dc, page, PAGE_RADIUS, card, PAGE_RADIUS, 1.0);
         unsafe {
             let (open, close) = buttons;
             if let (Ok(bg), Ok(bgh), Ok(fg)) = (

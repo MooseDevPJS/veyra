@@ -25,8 +25,7 @@
   [hidden] { display: none !important; }
   html, body { height: 100%; margin: 0; background: transparent; color: var(--fg); }
   body { display: flex; flex-direction: column; background: var(--glass); border: 1px solid var(--line); border-radius: 18px;
-         overflow: hidden; animation: enter .26s var(--out) both; }
-  @keyframes enter { from { transform: translateX(-14px); } }
+         overflow: hidden; }
   button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
   :focus-visible { outline: 2px solid var(--fg3); outline-offset: 1px; border-radius: 10px; }
   ::selection { background: var(--fg); color: var(--glass); }
@@ -102,7 +101,7 @@
   .empty { margin: 48px 24px; text-align: center; color: var(--fg3); }
   .empty strong { display: block; color: var(--fg2); font-weight: 600; margin-bottom: 4px; }
   #more { height: 1px; }
-  @media (prefers-reduced-motion: reduce) { body { animation: none; } *, *::before, *::after { transition-duration: .06s !important; } }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: .06s !important; } }
 </style>
 </head>
 <body>
@@ -287,9 +286,24 @@ function load(reset) {
   send({ type: 'list', q: query, skip: loaded });
 }
 
+// Veyra slides the panel in once the list is drawn (two frames: painted).
+let announce = true;
+function ready() {
+  if (!announce) return;
+  announce = false;
+  requestAnimationFrame(() => requestAnimationFrame(() => send({ type: 'ready' })));
+}
+
 chrome.webview.addEventListener('message', (e) => {
   const m = e.data;
   if (m.type === 'changed') { if (m.reload !== false) refresh(); return; }
+  // Opened again (the page was kept): fresh list, empty search.
+  if (m.type === 'refresh') {
+    closeAsk(); setMenu(false);
+    $('q').value = ''; query = ''; announce = true;
+    load(true); $('q').focus();
+    return;
+  }
   if (m.type !== 'list' || m.q !== query || m.skip !== loaded) return; // stale
   waiting = false;
   if (m.skip === 0) { $('days').replaceChildren(); days.clear(); $('list').scrollTop = 0; }
@@ -297,6 +311,7 @@ chrome.webview.addEventListener('message', (e) => {
   loaded += m.items.length;
   more = m.more;
   showEmpty();
+  ready();
 });
 
 // Single deletes are already off the list: only ranges reload it.
