@@ -328,10 +328,12 @@ fn parse_data_url(url: &str) -> Option<(String, Vec<u8>)> {
 }
 
 fn load_resources() -> Vec<Resource> {
-    let candidates: [PathBuf; 2] = [
-        crate::sys::exe_dir().join("ubo-resources.json"),
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/ubo-resources.json"),
-    ];
+    // Installed: next to veyra.exe. Built here (target\release): the
+    // project's assets folder, found by going up (no build path in the program).
+    let exe = crate::sys::exe_dir();
+    let candidates: Vec<PathBuf> = std::iter::once(exe.join("ubo-resources.json"))
+        .chain(exe.ancestors().take(4).map(|d| d.join("assets").join("ubo-resources.json")))
+        .collect();
     for path in candidates {
         if let Ok(text) = std::fs::read_to_string(&path) {
             match serde_json::from_str(&text) {

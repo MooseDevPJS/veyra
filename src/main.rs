@@ -24,6 +24,7 @@ mod newtab;
 mod peek;
 mod placement;
 mod permission;
+mod default_browser;
 mod find;
 mod history;
 mod i18n;
@@ -78,6 +79,8 @@ thread_local! {
     static APPS: RefCell<Vec<(HWND, Rc<RefCell<App>>)>> = const { RefCell::new(Vec::new()) };
     static SHARED: RefCell<Option<Shared>> = const { RefCell::new(None) };
     static CYCLE: RefCell<usize> = const { RefCell::new(0) };
+    /// The Veyra window used last (links from other apps open there).
+    static LAST_ACTIVE: std::cell::Cell<isize> = const { std::cell::Cell::new(0) };
     /// Windows tracking the mouse for WM_MOUSELEAVE.
     static TRACKING: RefCell<std::collections::HashSet<isize>> = RefCell::new(std::collections::HashSet::new());
 }
@@ -108,6 +111,8 @@ pub(crate) fn other_windows(own: HWND) -> Vec<HWND> {
 pub(crate) enum Content {
     /// The saved session (first window).
     Restore,
+    /// The saved session, then these addresses (Veyra started by a link).
+    RestoreWith(Vec<String>),
     Urls(Vec<String>),
     /// A live tab moved from another window.
     Tab(app::Tab),
@@ -134,7 +139,7 @@ pub(crate) fn open_window(opts: WindowOpts) -> std::result::Result<HWND, WindowO
     let first = APPS.with(|a| a.borrow().is_empty());
     let settings = Settings::load(&data_dir);
     let Ok(hwnd) = create_window(opts.at, opts.size, opts.follow.is_none()) else { return Err(opts) };
-    let restore = first && matches!(opts.content, Content::Restore);
+    let restore = first && matches!(opts.content, Content::Restore | Content::RestoreWith(_));
     // The first window reopens where the last one closed was.
     let maximized = restore && placement::restore(hwnd, &data_dir);
     set_frame(hwnd, settings.title_bar);
@@ -173,6 +178,10 @@ pub(crate) fn open_window(opts: WindowOpts) -> std::result::Result<HWND, WindowO
             if !app.restore_session() {
                 app.run(shortcuts::Action::NewTab);
             }
+        }
+        Content::RestoreWith(urls) => {
+            app.restore_session();
+            app.open_links(&urls);
         }
         Content::Urls(urls) if !urls.is_empty() => {
             let mut first_id = None;
@@ -214,7 +223,8 @@ fn main() -> Result<()> {
     while let Some(a) = args.next() {
         match a.as_str() {
             "--cycle" => cycle_secs = args.next().and_then(|s| s.parse().ok()).unwrap_or(0),
-            _ => urls.push(a),
+            // Windows passes links and .html files (default browser).
+            _ => urls.push(default_browser::arg_to_url(&a)),
         }
     }
     // Veyra is already running: it opens the window (one program for all).
@@ -248,7 +258,8 @@ fn main() -> Result<()> {
     let store = Rc::new(RefCell::new(store::Store::load(&data_dir)));
     SHARED.with(|s| *s.borrow_mut() = Some(Shared { env, blocker, store, d3d, data_dir }));
 
-    let content = if urls.is_empty() { Content::Restore } else { Content::Urls(urls) };
+    // Started by a link (default browser): the tabs come back, plus the link.
+    let content = if urls.is_empty() { Content::Restore } else { Content::RestoreWith(urls) };
     let Ok(hwnd) = open_window(WindowOpts { at: None, size: None, content, follow: None, private: false }) else {
         return Err(Error::from(E_POINTER));
     };
@@ -623,6 +634,12 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LR
             }
             unsafe { DefWindowProcW(hwnd, msg, w, l) }
         }
+        WM_ACTIVATE => {
+            if w.0 & 0xFFFF != 0 {
+                LAST_ACTIVE.with(|l| l.set(hwnd.0 as isize));
+            }
+            unsafe { DefWindowProcW(hwnd, msg, w, l) }
+        }
         WM_SIZE => {
             let maximized = w.0 as u32 == SIZE_MAXIMIZED;
             let done = with_window(hwnd, |a| {
@@ -831,13 +848,32 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LR
                 let _ = windows::Win32::UI::WindowsAndMessaging::ReplyMessage(LRESULT(r));
             };
             match data.dwData {
-                // Veyra started again: a new window here (multi::hand_to_running).
+                // Veyra started again (multi::hand_to_running): with links
+                // (from another app, Veyra being the default browser) they
+                // open as tabs of the last used normal window; without, a
+                // new window.
                 multi::OPEN_WINDOW => {
                     reply(1);
                     let urls = serde_json::from_str::<Vec<String>>(&json).unwrap_or_default();
-                    if let Ok(w) = open_window(WindowOpts { at: None, size: None, content: Content::Urls(urls), follow: None, private: false }) {
-                        unsafe {
-                            let _ = SetForegroundWindow(w);
+                    let last = HWND(LAST_ACTIVE.with(|l| l.get()) as *mut _);
+                    let normal = |w: HWND| with_window(w, |a| !a.private).unwrap_or(false);
+                    let target = if normal(last) { Some(last) } else { APPS.with(|a| a.borrow().iter().map(|(h, _)| *h).collect::<Vec<_>>()).into_iter().find(|w| normal(*w)) };
+                    match target.filter(|_| !urls.is_empty()) {
+                        Some(w) => {
+                            with_window(w, |a| a.open_links(&urls));
+                            unsafe {
+                                if IsIconic(w).as_bool() {
+                                    let _ = ShowWindow(w, SW_RESTORE);
+                                }
+                                let _ = SetForegroundWindow(w);
+                            }
+                        }
+                        None => {
+                            if let Ok(w) = open_window(WindowOpts { at: None, size: None, content: Content::Urls(urls), follow: None, private: false }) {
+                                unsafe {
+                                    let _ = SetForegroundWindow(w);
+                                }
+                            }
                         }
                     }
                     LRESULT(1)

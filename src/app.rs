@@ -113,8 +113,14 @@ pub const SETTINGS_URL: &str = "https://browser.settings/settings.html";
 pub const NEWTAB_URL: &str = "https://browser.settings/newtab.html";
 
 pub(crate) fn ui_dir() -> PathBuf {
-    let next_to_exe = sys::exe_dir().join("ui");
-    if next_to_exe.exists() { next_to_exe } else { PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("ui") }
+    // Installed: next to veyra.exe. Built here (target\release): the
+    // project's ui folder, found by going up (no build path in the program).
+    let exe = sys::exe_dir();
+    exe.ancestors()
+        .take(4)
+        .map(|d| d.join("ui"))
+        .find(|d| d.join("settings.html").exists())
+        .unwrap_or_else(|| exe.join("ui"))
 }
 
 thread_local! {
@@ -713,6 +719,19 @@ impl App {
         }
     }
 
+    /// Links from outside (another app, Windows): new tabs, the first one shown.
+    pub fn open_links(&mut self, urls: &[String]) {
+        let mut first = None;
+        for url in urls {
+            let url = self.settings.resolve_input(url);
+            let id = self.add_tab(url, String::new(), false);
+            first.get_or_insert(id);
+        }
+        if let Some(id) = first {
+            self.activate(id);
+        }
+    }
+
     /// Ctrl+Shift+N: a new private window.
     pub fn open_private_window(&mut self) {
         let opts = crate::WindowOpts { at: None, size: None, content: crate::Content::Urls(Vec::new()), follow: None, private: true };
@@ -1221,6 +1240,15 @@ impl App {
                 restart = self.apply_settings(new);
             }
             Some("reset") => restart = self.apply_settings(Settings::default()),
+            // Settings > General: register Veyra and open Windows' page
+            // where the user makes it the default (default_browser.rs).
+            Some("set_default") => {
+                if !crate::default_browser::register() {
+                    self.notify(crate::i18n::t("Impossibile registrare Veyra in Windows", "Couldn't register Veyra with Windows"));
+                }
+                crate::default_browser::open_windows_settings();
+                return;
+            }
             // Settings > About: look for an update / install it (update.rs).
             Some("upd_check") => {
                 crate::update::check(self.hwnd);
@@ -1273,6 +1301,7 @@ impl App {
             "version": env!("CARGO_PKG_VERSION"),
             "lang": crate::i18n::code(),
             "update": crate::update::status_json(),
+            "default_browser": crate::default_browser::is_default(),
         })
         .to_string()
     }

@@ -1,9 +1,10 @@
+import os
 """From assets/logo/veyra-1024.png (the SVG rendered with a transparent
 background, see MEMORY.md) builds every size the app needs: PNGs and the
 Windows .ico. Run: python tools/logo-assets.py"""
 from PIL import Image
 
-DIR = 'A:/Cooding/browser/assets/logo/'
+DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', 'logo') + os.sep
 master = Image.open(DIR + 'veyra-1024.png').convert('RGBA')
 # App-icon variant (bolder outline, bigger in the square): small sizes and
 # the .ico, which must read on a light taskbar too.

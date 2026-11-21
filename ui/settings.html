@@ -160,6 +160,13 @@
       <label>Riapri le schede all'avvio</label>
       <span class="switch"><input type="checkbox" data-key="restore_session"><i></i></span>
     </div>
+    <div class="row">
+      <label>Browser predefinito
+        <span class="help" tabindex="0">?<span>Windows non permette ai programmi di diventare predefiniti da soli: il pulsante registra Veyra e apre le impostazioni di Windows, dove basta premere «Imposta predefinito».</span></span>
+      </label>
+      <span class="muted" id="default-state" role="status" aria-live="polite"></span>
+      <button type="button" class="quiet" id="default-btn">Imposta come predefinito</button>
+    </div>
   </section>
 
   <h2>Aspetto</h2>
@@ -346,6 +353,9 @@ const EN = {
   'Barra fluttuante: la ricerca appare sopra la pagina. Pagina: si apre una scheda vuota con la barra di ricerca.':
     'Floating bar: search appears over the page. Page: opens an empty tab with a search box.',
   "Riapri le schede all'avvio": 'Reopen tabs at startup',
+  'Browser predefinito': 'Default browser', 'Imposta come predefinito': 'Make default',
+  'Windows non permette ai programmi di diventare predefiniti da soli: il pulsante registra Veyra e apre le impostazioni di Windows, dove basta premere «Imposta predefinito».':
+    "Windows doesn't let programs make themselves the default: the button registers Veyra and opens Windows Settings, where you just press \u201cSet default\u201d.",
   'Lingua': 'Language', 'Automatica': 'Automatic', 'Tema': 'Theme', 'Come Windows': 'Like Windows', 'Chiaro': 'Light', 'Scuro': 'Dark',
   'Materiale': 'Material', 'Vetro': 'Glass', 'Pieno': 'Solid',
   'Vetro: lo sfondo del desktop si vede sfocato dietro la barra laterale. Si spegne da solo se in Windows la trasparenza è disattivata.':
@@ -652,6 +662,16 @@ document.addEventListener('change', (e) => {
 });
 document.getElementById('reset').addEventListener('click', () => send({ type: 'reset' }));
 
+// ---- default browser (General) ----
+function renderDefault(isDefault) {
+  const en = LANG === 'en';
+  document.getElementById('default-state').textContent = isDefault ? (en ? 'Veyra is the default browser' : 'Veyra è il browser predefinito') : '';
+  document.getElementById('default-btn').hidden = isDefault;
+}
+document.getElementById('default-btn').addEventListener('click', () => send({ type: 'set_default' }));
+// Back from Windows Settings: ask again whether Veyra is the default now.
+window.addEventListener('focus', () => { if (S) send({ type: 'get' }); });
+
 // ---- updates (About) ----
 const UPD = {
   idle: ['', 'Cerca aggiornamenti', 'Check for updates'],
@@ -812,6 +832,7 @@ window.chrome?.webview?.addEventListener('message', (e) => {
     S = m.settings;
     document.getElementById('version').textContent = m.version;
     if (m.update) { UPDATE = m.update; renderUpdate(); }
+    if (typeof m.default_browser === 'boolean') renderDefault(m.default_browser);
     render();
   } else if (m.type === 'downloads') {
     renderDownloads(m.list || [], m.folder);

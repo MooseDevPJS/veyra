@@ -1,3 +1,4 @@
+import os
 """Builds assets/logo/veyra.svg from the original logo bitmap.
 
 The outline of each shape (the V and the wing) is traced from the image's
@@ -7,8 +8,9 @@ traced from the original's shading. Run: python tools/logo-trace.py"""
 import math
 from PIL import Image
 
-SRC = 'A:/Cooding/browser/assets/logo/veyra-original.png'
-OUT = 'A:/Cooding/browser/assets/logo/veyra.svg'
+LOGO = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'assets', 'logo')
+SRC = os.path.join(LOGO, 'veyra-original.png')
+OUT = os.path.join(LOGO, 'veyra.svg')
 
 im = Image.open(SRC).convert('RGBA')
 W, H = im.size

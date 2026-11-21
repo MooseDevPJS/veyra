@@ -1,4 +1,4 @@
-# Screenshot of the running browser window -> A:\Cooding\DEsigns\Browser\claude\<Name>.png
+# Screenshot of the running browser window -> target\shots\<Name>.png
 param([string]$Name = 'shot', [string]$Proc = 'veyra')
 Add-Type -AssemblyName System.Drawing
 if (-not ('ShotWin' -as [type])) { Add-Type @'
@@ -15,6 +15,7 @@ $r = New-Object ShotWin+RECT
 [ShotWin]::GetWindowRect($h, [ref]$r) | Out-Null
 $b = New-Object Drawing.Bitmap ($r.R - $r.L), ($r.B - $r.T)
 [Drawing.Graphics]::FromImage($b).CopyFromScreen($r.L, $r.T, 0, 0, $b.Size)
-$out = "A:\Cooding\DEsigns\Browser\claude\$Name.png"
+$dir = "$PSScriptRoot\..\target\shots"; New-Item -ItemType Directory -Force $dir | Out-Null
+$out = "$dir\$Name.png"
 $b.Save($out)
 $out

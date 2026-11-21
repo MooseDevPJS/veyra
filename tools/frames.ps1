@@ -18,10 +18,11 @@ $h = (Get-Process veyra | Sort-Object StartTime | Select-Object -First 1).MainWi
 $r = New-Object FrWin+RECT; [FrWin]::GetWindowRect($h, [ref]$r) | Out-Null
 $p = New-Object FrWin+POINT; $p.X = $X; $p.Y = $Y; [FrWin]::ClientToScreen($h, [ref]$p) | Out-Null
 [FrWin]::SetCursorPos($p.X, $p.Y) | Out-Null
+$dir = "$PSScriptRoot\..\target\shots"; New-Item -ItemType Directory -Force $dir | Out-Null
 $w = 420; $hh = $r.B - $r.T
 for ($i = 0; $i -lt $N; $i++) {
     $b = New-Object Drawing.Bitmap $w, $hh
     [Drawing.Graphics]::FromImage($b).CopyFromScreen($r.L, $r.T, 0, 0, $b.Size)
-    $b.Save("A:\Cooding\DEsigns\Browser\claude\$Name-$i.png"); $b.Dispose()
+    $b.Save("$dir\$Name-$i.png"); $b.Dispose()
     Start-Sleep -Milliseconds $Ms
 }
