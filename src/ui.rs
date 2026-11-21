@@ -233,6 +233,30 @@ pub struct MenuItem {
     pub sep: bool,
 }
 
+/// Find in page bar (Ctrl+F), top right of the page.
+pub struct FindBar {
+    pub field: TextField,
+    /// (active match 1-based, count); (0, 0) when nothing matches.
+    pub count: (i32, i32),
+    /// Has the keyboard (false after a click in the page).
+    pub focused: bool,
+    pub hover: Option<FindHit>,
+    pub t: Tween,
+    pub caret_blink: std::time::Instant,
+}
+
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub enum FindHit {
+    Field,
+    Panel,
+    Prev,
+    Next,
+    Close,
+}
+
+const FIND_W: f32 = 380.0;
+const FIND_H: f32 = 44.0;
+
 /// Right-click menu of a tab.
 pub struct Menu {
     pub tab: TabId,
@@ -298,6 +322,8 @@ pub struct Ui {
     pub bar: CommandBar,
     pub tip: Option<Tip>,
     pub menu: Option<Menu>,
+    /// Ctrl+F bar (find.rs).
+    pub find: Option<FindBar>,
     /// Where the last plain menu opened (a sub-menu opens in the same place).
     pub menu_anchor: (f32, f32),
     fonts: Fonts,
@@ -366,6 +392,7 @@ impl Ui {
             },
             tip: None,
             menu: None,
+            find: None,
             menu_anchor: (0.0, 0.0),
             fonts,
             bitmaps: HashMap::new(),
@@ -387,6 +414,7 @@ impl Ui {
             || self.sel_y.running()
             || self.peek.running()
             || self.history_t.running()
+            || self.find.as_ref().is_some_and(|f| f.t.running())
             || self.bar.t.running()
             || self.tip.as_ref().is_some_and(|t| t.t.running())
             || self.menu.as_ref().is_some_and(|m| m.t.running())
@@ -1132,7 +1160,133 @@ impl Ui {
         text.len()
     }
 
+    /// The find bar (DIPs): top right of the page.
+    pub fn find_rect(&self, page: D2D_RECT_F) -> D2D_RECT_F {
+        let w = FIND_W.min(page.right - page.left - 24.0);
+        rect(page.right - 12.0 - w, page.top + 12.0, page.right - 12.0, page.top + 12.0 + FIND_H)
+    }
+
+    /// Buttons of the find bar: previous, next, close.
+    fn find_buttons(&self, r: D2D_RECT_F) -> [(D2D_RECT_F, FindHit); 3] {
+        let y = r.top + (FIND_H - 28.0) / 2.0;
+        let b = |right: f32| rect(right - 28.0, y, right, y + 28.0);
+        let close = r.right - 8.0;
+        [(b(close - 60.0), FindHit::Prev), (b(close - 30.0), FindHit::Next), (b(close), FindHit::Close)]
+    }
+
+    pub fn find_hit(&self, page: D2D_RECT_F, x: f32, y: f32) -> Option<FindHit> {
+        self.find.as_ref()?;
+        let r = self.find_rect(page);
+        if !contains(&r, x, y) {
+            return None;
+        }
+        for (b, hit) in self.find_buttons(r) {
+            if contains(&b, x, y) {
+                return Some(hit);
+            }
+        }
+        Some(if x < r.right - 8.0 - 90.0 - 64.0 { FindHit::Field } else { FindHit::Panel })
+    }
+
+    fn draw_find(&self, dc: &ID2D1DeviceContext, page: D2D_RECT_F) {
+        let Some(f) = &self.find else { return };
+        let th = self.theme;
+        let t = f.t.value();
+        let r = self.find_rect(page);
+        let b = |c: u32, a: f32| unsafe { dc.CreateSolidColorBrush(&rgba(c, a * t), None).ok() };
+        unsafe {
+            // Soft shadow, like the command bar's.
+            for i in 1..=4 {
+                let g = i as f32 * 2.5;
+                if let Some(sh) = b(0x000000, 0.04) {
+                    dc.FillRoundedRectangle(&rr(rect(r.left - g * 0.4, r.top + g * 0.5, r.right + g * 0.4, r.bottom + g), 14.0 + g), &sh);
+                }
+            }
+            let rt: &ID2D1RenderTarget = dc;
+            // Opaque: the page's own buttons must not show through.
+            if let (Some(bg), Some(line)) = (b(th.panel(), 1.0), b(th.ink(), if th.dark { 0.10 } else { 0.08 })) {
+                dc.FillRoundedRectangle(&rr(r, 14.0), &bg);
+                dc.DrawRoundedRectangle(&rr(r, 14.0), &line, 1.0, None);
+            }
+            let (Some(fg), Some(fg2), Some(hov)) = (b(th.fg(), 1.0), b(th.fg(), 0.62), b(th.ink(), 0.08)) else { return };
+            draw_icon(&self.gfx, rt, Icon::Search, r.left + 14.0, r.top + 14.0, &fg2);
+
+            // Count: "3/12", or "0/0" when the text is not on the page.
+            let buttons = self.find_buttons(r);
+            let count_right = buttons[0].0.left - 6.0;
+            let count_left = count_right - 64.0;
+            if !f.field.text.is_empty() {
+                let text: Vec<u16> = format!("{}/{}", f.count.0, f.count.1).encode_utf16().collect();
+                if let Ok(l) = self.gfx.dwrite.CreateTextLayout(&text, &self.fonts.small, 64.0, FIND_H) {
+                    let _ = l.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_TRAILING);
+                    let _ = l.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                    dc.DrawTextLayout(windows_numerics::Vector2 { X: count_left, Y: r.top }, &l, &fg2, D2D1_DRAW_TEXT_OPTIONS_NONE);
+                }
+            }
+
+            // Field with selection and blinking caret.
+            let fx = r.left + 40.0;
+            let fw = count_left - 8.0 - fx;
+            dc.PushAxisAlignedClip(&rect(fx - 2.0, r.top, fx + fw, r.bottom), D2D1_ANTIALIAS_MODE_ALIASED);
+            let layout = self.gfx.dwrite.CreateTextLayout(&f.field.text, &self.fonts.title, 4000.0, FIND_H).ok();
+            if let Some(l) = &layout {
+                let _ = l.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+                let _ = l.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
+            }
+            let caret_x = |i: usize| -> f32 {
+                let Some(l) = &layout else { return 0.0 };
+                let (mut x, mut y) = (0.0, 0.0);
+                let mut m = DWRITE_HIT_TEST_METRICS::default();
+                let _ = l.HitTestTextPosition(i as u32, false, &mut x, &mut y, &mut m);
+                x
+            };
+            // Long text scrolls so the caret stays visible.
+            let shift = (caret_x(f.field.caret) - fw + 4.0).max(0.0);
+            let (a, z) = f.field.selection();
+            if a != z
+                && let Some(sel) = b(th.ink(), 0.16)
+            {
+                dc.FillRectangle(&rect(fx - shift + caret_x(a), r.top + 12.0, fx - shift + caret_x(z), r.bottom - 12.0), &sel);
+            }
+            if f.field.text.is_empty() {
+                let ph: Vec<u16> = tr("Cerca nella pagina", "Find in page").encode_utf16().collect();
+                if let Some(ph_b) = b(th.fg(), 0.5) {
+                    dc.DrawText(&ph, &self.fonts.title, &rect(fx, r.top, fx + fw, r.bottom), &ph_b, D2D1_DRAW_TEXT_OPTIONS_CLIP, DWRITE_MEASURING_MODE_NATURAL);
+                }
+            } else if let Some(l) = &layout {
+                dc.DrawTextLayout(windows_numerics::Vector2 { X: fx - shift, Y: r.top }, l, &fg, D2D1_DRAW_TEXT_OPTIONS_NONE);
+            }
+            let since = f.caret_blink.elapsed().as_millis();
+            if f.focused && (since < 500 || (since / 530) % 2 == 0) {
+                let cx = fx - shift + caret_x(f.field.caret);
+                if let Some(c) = b(th.fg(), 0.9) {
+                    dc.FillRectangle(&rect(cx, r.top + 13.0, cx + 1.5, r.bottom - 13.0), &c);
+                }
+            }
+            dc.PopAxisAlignedClip();
+
+            // Previous / next / close.
+            let has_text = !f.field.text.is_empty();
+            for (br, hit) in buttons {
+                if f.hover == Some(hit) {
+                    dc.FillEllipse(&circle(br), &hov);
+                }
+                let icon = match hit {
+                    FindHit::Prev => Icon::ChevronUp,
+                    FindHit::Next => Icon::ChevronDown,
+                    _ => Icon::Close,
+                };
+                let dim = matches!(hit, FindHit::Prev | FindHit::Next) && !has_text;
+                let brush = if dim { b(th.fg(), 0.3) } else { Some(fg2.clone()) };
+                if let Some(c) = brush {
+                    draw_icon(&self.gfx, rt, icon, br.left + 6.0, br.top + 6.0, &c);
+                }
+            }
+        }
+    }
+
     pub fn draw_overlay(&mut self, dc: &ID2D1DeviceContext, page: D2D_RECT_F, icons: &HashMap<String, (IWICBitmap, IWICBitmap)>, keys_for_enter: &str) {
+        self.draw_find(dc, page);
         let t = self.bar.t.value();
         if t > 0.001 {
             self.draw_bar(dc, page, t, icons, keys_for_enter);

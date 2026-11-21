@@ -82,6 +82,8 @@ pub enum Event {
     /// Alt+click on a link: preview it.
     Peek(String),
     PeekClose,
+    /// Find in page (find.rs): (tab, active match 0-based, match count).
+    FindCount(TabId, i32, i32),
     /// JSON message from the history panel (history.rs).
     HistoryMsg(String),
     HistoryClose,
@@ -362,6 +364,8 @@ pub struct App {
     /// logins live in memory only) and nothing of it is written to disk:
     /// history, session, site icons, pinned tabs, downloads list.
     pub(crate) private: bool,
+    /// Tabs whose finder reports its match count (find.rs).
+    pub(crate) find_hooked: std::collections::HashSet<TabId>,
     pub(crate) incoming: Option<TabId>,
     pub(crate) incoming_at: Instant,
     /// Torn off and following the pointer: the window under it, whether
@@ -476,6 +480,7 @@ impl App {
             peek: None,
             history_panel: None,
             private: false,
+            find_hooked: Default::default(),
             prompts: Vec::new(),
             notice: None,
             exts: Vec::new(),
@@ -544,6 +549,8 @@ impl App {
         if self.active == Some(id) {
             return;
         }
+        // The find bar searches one page: switching tabs closes it.
+        self.close_find();
         // Fullscreen belongs to the page that asked for it.
         self.leave_fullscreen();
         if let Some(prev) = self.active.and_then(|p| self.tab_mut(p)) {
@@ -929,6 +936,7 @@ impl App {
             Event::PeekClose => self.close_peek(),
             Event::Created(crate::history::HISTORY_ID, c) => self.history_created(c),
             Event::HistoryMsg(json) => self.history_message(&json),
+            Event::FindCount(id, active, total) => self.find_count(id, active, total),
             Event::HistoryClose => self.close_history(),
             Event::Permission(id, args, deferral) => self.permission_requested(id, args, deferral),
             Event::InstallExtension(id, edge) => self.install_extension(id, edge),
@@ -1090,6 +1098,7 @@ impl App {
             Bookmark => self.toggle_bookmark(),
             Settings => self.open_settings(),
             History => self.toggle_history(),
+            Find => self.open_find(),
             PrivateWindow => self.open_private_window(),
             ToggleSidebar => self.toggle_sidebar(),
             CloseTab => {
@@ -1489,8 +1498,7 @@ impl App {
 pub(crate) fn is_host_handled(a: Action) -> bool {
     !matches!(
         a,
-        Action::Find
-            | Action::ZoomIn
+        Action::ZoomIn
             | Action::ZoomOut
             | Action::ZoomReset
             | Action::ShowShortcuts
@@ -1801,7 +1809,7 @@ fn wire_events(
                     && is_host_handled(action)
                 {
                     args.SetHandled(true)?;
-                    if matches!(action, Action::NewTab | Action::FocusAddress | Action::CommandBar) {
+                    if matches!(action, Action::NewTab | Action::FocusAddress | Action::CommandBar | Action::Find) {
                         // Take the keyboard now so the next keys reach the bar.
                         BAR_PENDING.with(|p| p.set(true));
                         if let Some(w) = tab_owner(hwnd.0) {

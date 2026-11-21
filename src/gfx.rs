@@ -122,6 +122,7 @@ pub enum Icon {
     Star,
     StarFilled,
     ChevronDown,
+    ChevronUp,
     Puzzle,
     Download,
 }
@@ -177,6 +178,10 @@ pub fn draw_icon(g: &Gfx, rt: &ID2D1RenderTarget, icon: Icon, x: f32, y: f32, br
         Icon::ChevronDown => {
             line((4.0, 6.5), (8.0, 10.5));
             line((8.0, 10.5), (12.0, 6.5));
+        }
+        Icon::ChevronUp => {
+            line((4.0, 9.5), (8.0, 5.5));
+            line((8.0, 5.5), (12.0, 9.5));
         }
         Icon::Maximize => unsafe {
             let r = D2D1_ROUNDED_RECT { rect: rect(x + 4.0, y + 4.0, x + 12.0, y + 12.0), radiusX: 2.0, radiusY: 2.0 };

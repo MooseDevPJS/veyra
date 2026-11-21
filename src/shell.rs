@@ -204,7 +204,7 @@ impl App {
         RECT { left: 0, top: 0, right: (r.right - r.left).max(1), bottom: (r.bottom - r.top).max(1) }
     }
 
-    fn page_dip(&self) -> D2D_RECT_F {
+    pub(crate) fn page_dip(&self) -> D2D_RECT_F {
         let r = self.page_rect();
         let s = self.scale;
         rect(r.left as f32 / s, r.top as f32 / s, r.right as f32 / s, r.bottom as f32 / s)
@@ -400,7 +400,8 @@ impl App {
             || history_card.is_some()
             || prompt.is_some()
             || notice.is_some()
-            || card.is_some();
+            || card.is_some()
+            || self.ui.find.is_some();
         {
             let ui = &mut self.ui;
             let icons = &self.icons;
@@ -659,6 +660,10 @@ impl App {
         if self.on_resize_edge(x) || self.on_dock_divider(x) {
             return unsafe { LoadCursorW(None, IDC_SIZEWE).ok() };
         }
+        // Find bar: a text cursor on its field, the arrow on its buttons.
+        if let Some(hit) = self.ui.find_hit(self.page_dip(), x as f32 / self.scale, y as f32 / self.scale) {
+            return (hit == crate::ui::FindHit::Field).then(|| unsafe { LoadCursorW(None, IDC_IBEAM).ok() }).flatten();
+        }
         // The page's cursor only while a live page is there (no tabs or an
         // unloaded tab: a stale "none" cursor would hide the pointer).
         let live = self.active_index().is_some_and(|i| self.tabs[i].view.is_some());
@@ -776,8 +781,8 @@ impl App {
             self.bar_mouse(kind, xd, yd);
             return;
         }
-        // Permission and download cards over the page.
-        if self.prompt_mouse(kind, x, y) || self.download_mouse(kind, x, y) {
+        // Permission and download cards over the page, and the find bar.
+        if self.prompt_mouse(kind, x, y) || self.download_mouse(kind, x, y) || self.find_mouse(kind, x, y) {
             if self.mouse_in_page {
                 self.forward(Mouse::Leave, x, y, 0, 0);
             }
@@ -2049,6 +2054,9 @@ impl App {
             self.close_menu();
             return true;
         }
+        if self.find_key(vk) {
+            return true;
+        }
         if self.peek.is_some() && vk == 0x1B {
             self.close_peek();
             return true;
@@ -2138,6 +2146,9 @@ impl App {
 
     /// Typed character while the command bar is open.
     pub fn bar_char(&mut self, ch: u16) -> bool {
+        if self.find_char(ch) {
+            return true;
+        }
         if !self.ui.bar.open {
             if crate::app::BAR_PENDING.with(|p| p.get()) && ch >= 0x20 {
                 crate::app::TYPED_AHEAD.with(|t| t.borrow_mut().push(ch));

@@ -24,6 +24,7 @@ mod newtab;
 mod peek;
 mod placement;
 mod permission;
+mod find;
 mod history;
 mod i18n;
 mod settings;
@@ -347,8 +348,11 @@ fn classic_frame() -> bool {
 pub(crate) fn set_frame(hwnd: HWND, classic: bool) {
     CLASSIC_FRAME.store(classic, std::sync::atomic::Ordering::Relaxed);
     unsafe {
-        let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
-        let style = if classic { style | WS_CAPTION.0 } else { style & !WS_CAPTION.0 };
+        // WS_CAPTION stays in both cases: without it Windows skips the
+        // minimize / restore / maximize animations. Frameless, the title bar
+        // is hidden by WM_NCCALCSIZE (the client area covers it).
+        let style = GetWindowLongW(hwnd, GWL_STYLE) as u32 | WS_CAPTION.0;
+        let _ = classic;
         SetWindowLongW(hwnd, GWL_STYLE, style as i32);
         let _ = SetWindowPos(hwnd, None, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
     }

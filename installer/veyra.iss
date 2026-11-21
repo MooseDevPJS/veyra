@@ -3,7 +3,7 @@
 ; (after `cargo build --release`). Keep the AppId: updates rely on it.
 
 #define AppName "Veyra"
-#define AppVersion "0.8.0"
+#define AppVersion "0.8.1"
 #define AppPublisher "MooseDevPJS"
 #define AppURL "https://github.com/MooseDevPJS/veyra"
 #define AppExe "veyra.exe"
